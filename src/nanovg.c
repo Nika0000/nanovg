@@ -2427,7 +2427,7 @@ static float nvg__quantize(float a, float d)
 
 static float nvg__getFontScale(NVGstate* state)
 {
-	return nvg__minf(nvg__quantize(nvg__getAverageScale(state->xform), 0.01f), 4.0f);
+	return nvg__minf(nvg__quantize(nvg__getAverageScale(state->xform), 0.01f), 8.0f);
 }
 
 static void nvg__flushTextTexture(NVGcontext* ctx)
@@ -2553,6 +2553,18 @@ float nvgText(NVGcontext* ctx, float x, float y, const char* string, const char*
 		nvgTransformPoint(&c[2],&c[3], state->xform, q.x1*invscale, q.y0*invscale);
 		nvgTransformPoint(&c[4],&c[5], state->xform, q.x1*invscale, q.y1*invscale);
 		nvgTransformPoint(&c[6],&c[7], state->xform, q.x0*invscale, q.y1*invscale);
+		// Snap glyph quads to device pixel grid when transform is axis-aligned (no rotation/skew)
+		if (state->xform[1] == 0.0f && state->xform[2] == 0.0f) {
+			float pixelRatio = ctx->devicePxRatio;
+			float snapX = floorf(c[0] * pixelRatio + 0.5f) / pixelRatio;
+			float snapY = floorf(c[1] * pixelRatio + 0.5f) / pixelRatio;
+			float dx = snapX - c[0];
+			float dy = snapY - c[1];
+			c[0] += dx; c[1] += dy;
+			c[2] += dx; c[3] += dy;
+			c[4] += dx; c[5] += dy;
+			c[6] += dx; c[7] += dy;
+		}
 		// Create triangles
 		if (nverts+6 <= cverts) {
 			nvg__vset(&verts[nverts], c[0], c[1], q.s0, q.t0); nverts++;
