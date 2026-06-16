@@ -36,13 +36,13 @@
 #include "nanovg.h"
 
 #if TARGET_OS_SIMULATOR
-#include "mnvg_bitcode/simulator.h"
+#include "simulator.h"
 #elif TARGET_OS_IOS
-#include "mnvg_bitcode/ios.h"
+#include "ios.h"
 #elif TARGET_OS_OSX
-#include "mnvg_bitcode/macos.h"
+#include "macos.h"
 #elif TARGET_OS_TV
-#include "mnvg_bitcode/tvos.h"
+#include "tvos.h"
 #else
 #define MNVG_INVALID_TARGET
 #endif

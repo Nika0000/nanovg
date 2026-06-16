@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libglfw3-dev libglew-dev
+
+      - name: Configure
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --config Release
+
+      - name: Configure with examples (Linux)
+        if: runner.os == 'Linux'
+        run: cmake -B build-examples -DCMAKE_BUILD_TYPE=Release -DNANOVG_BUILD_EXAMPLES=ON
+
+      - name: Build with examples (Linux)
+        if: runner.os == 'Linux'
+        run: cmake --build build-examples --config Release
