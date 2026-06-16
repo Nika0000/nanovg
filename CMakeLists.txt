@@ -46,7 +46,10 @@ if(NANOVG_BUILD_EXAMPLES)
         ${CMAKE_CURRENT_SOURCE_DIR}/third_party
         ${CMAKE_CURRENT_SOURCE_DIR}/examples
     )
-    target_link_libraries(example_gl3 nanovg glfw OpenGL::GL)
+    target_link_libraries(example_gl3 nanovg glfw OpenGL::GL ${CMAKE_DL_LIBS})
+    if(UNIX)
+        target_link_libraries(example_gl3 m)
+    endif()
 
     if(NOT APPLE)
         find_package(GLEW REQUIRED)
