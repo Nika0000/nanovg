@@ -461,6 +461,17 @@ error:
     if (dk->ncalls > 0) dk->ncalls--;
 }
 
+static void dknvg__renderBlur(void* uptr, float x, float y, float w, float h, float radius, float devicePixelRatio)
+{
+    NVG_NOTUSED(uptr);
+    NVG_NOTUSED(x);
+    NVG_NOTUSED(y);
+    NVG_NOTUSED(w);
+    NVG_NOTUSED(h);
+    NVG_NOTUSED(radius);
+    NVG_NOTUSED(devicePixelRatio);
+}
+
 static void dknvg__renderDelete(void* uptr) {
     DKNVGcontext* dk = (DKNVGcontext*)uptr;
     if (dk == NULL) return;
@@ -492,6 +503,7 @@ NVGcontext* nvgCreateDk(nvg::DkRenderer *renderer, int flags) {
     params.renderFill = dknvg__renderFill;
     params.renderStroke = dknvg__renderStroke;
     params.renderTriangles = dknvg__renderTriangles;
+    params.renderBlur = dknvg__renderBlur;
     params.renderDelete = dknvg__renderDelete;
     params.userPtr = dk;
     params.edgeAntiAlias = flags & NVG_ANTIALIAS ? 1 : 0;

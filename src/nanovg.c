@@ -2584,6 +2584,19 @@ float nvgText(NVGcontext* ctx, float x, float y, const char* string, const char*
 	return iter.nextx / scale;
 }
 
+void nvgBlurRegion(NVGcontext* ctx, float x, float y, float w, float h, float radius)
+{
+	if (radius <= 0 || w <= 0 || h <= 0) return;
+	if (ctx->params.renderBlur == NULL) return;
+
+	if(ctx->textTextureDirty != 0) {
+		nvg__flushTextTexture(ctx);
+		ctx->textTextureDirty = 0;
+	}
+	ctx->params.renderFlush(ctx->params.userPtr);
+	ctx->params.renderBlur(ctx->params.userPtr, x, y, w, h, radius, ctx->devicePxRatio);
+}
+
 void nvgStencil(NVGcontext* ctx)
 {
 	NVGstate* state = nvg__getState(ctx);

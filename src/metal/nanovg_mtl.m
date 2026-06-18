@@ -24,6 +24,7 @@
 #include "nanovg_mtl.h"
 
 #import <Metal/Metal.h>
+#import <MetalPerformanceShaders/MetalPerformanceShaders.h>
 #import <QuartzCore/QuartzCore.h>
 #include <TargetConditionals.h>
 #include <math.h>
@@ -367,6 +368,95 @@ static int mtlnvg__renderCreate(void* uptr)
     return [mtl renderCreate];
 }
 
+static void mtlnvg__renderBlur(void* uptr, float x, float y, float w, float h,
+                               float radius, float devicePixelRatio)
+{
+    MNVGcontext* mtl = (__bridge MNVGcontext*)uptr;
+    if (radius <= 0 || w <= 0 || h <= 0)
+        return;
+
+    id<MTLDevice> device = mtl.metalLayer.device;
+    if (device == nil)
+        return;
+
+    // End current render encoder to access the color texture.
+    [mtl.renderEncoder endEncoding];
+    mtl.renderEncoder = nil;
+
+    // Get the current color texture from the drawable or framebuffer.
+    id<MTLTexture> colorTexture = nil;
+    id<CAMetalDrawable> drawable = mtl.metalLayer.nextDrawable;
+    if (drawable != nil)
+        colorTexture = drawable.texture;
+    if (colorTexture == nil)
+        return;
+
+    // Scale region by device pixel ratio.
+    float px = x * devicePixelRatio;
+    float py = y * devicePixelRatio;
+    float pw = w * devicePixelRatio;
+    float ph = h * devicePixelRatio;
+
+    // Clamp to texture bounds.
+    MTLRegion region = MTLRegionMake2D(
+        (NSUInteger)fmaxf(px, 0),
+        (NSUInteger)fmaxf(py, 0),
+        (NSUInteger)fminf(pw, colorTexture.width - fmaxf(px, 0)),
+        (NSUInteger)fminf(ph, colorTexture.height - fmaxf(py, 0)));
+
+    if (region.size.width == 0 || region.size.height == 0)
+        return;
+
+    // Create a temporary texture for the blur region.
+    MTLTextureDescriptor* desc = [MTLTextureDescriptor
+        texture2DDescriptorWithPixelFormat:colorTexture.pixelFormat
+                                    width:region.size.width
+                                   height:region.size.height
+                                mipmapped:NO];
+    desc.usage = MTLTextureUsageShaderRead | MTLTextureUsageShaderWrite;
+    id<MTLTexture> tempTexture = [device newTextureWithDescriptor:desc];
+    if (tempTexture == nil)
+        return;
+
+    // Copy the region from the color texture to the temp texture.
+    id<MTLCommandBuffer> commandBuffer = [mtl.commandQueue commandBuffer];
+    id<MTLBlitCommandEncoder> blit = [commandBuffer blitCommandEncoder];
+    [blit copyFromTexture:colorTexture
+              sourceSlice:0
+              sourceLevel:0
+             sourceOrigin:(MTLOrigin){ region.origin.x, region.origin.y, 0 }
+               sourceSize:(MTLSize){ region.size.width, region.size.height, 1 }
+                toTexture:tempTexture
+         destinationSlice:0
+         destinationLevel:0
+        destinationOrigin:(MTLOrigin){ 0, 0, 0 }];
+    [blit endEncoding];
+
+    // Apply Gaussian blur using MPS.
+    float sigma = radius * devicePixelRatio * 0.5f;
+    MPSImageGaussianBlur* blur = [[MPSImageGaussianBlur alloc]
+        initWithDevice:device
+                 sigma:sigma];
+    blur.edgeMode = MPSImageEdgeModeClamp;
+    [blur encodeToCommandBuffer:commandBuffer inPlaceTexture:&tempTexture
+                  fallbackCopyAllocator:nil];
+
+    // Copy the blurred result back.
+    id<MTLBlitCommandEncoder> blit2 = [commandBuffer blitCommandEncoder];
+    [blit2 copyFromTexture:tempTexture
+               sourceSlice:0
+               sourceLevel:0
+              sourceOrigin:(MTLOrigin){ 0, 0, 0 }
+                sourceSize:(MTLSize){ region.size.width, region.size.height, 1 }
+                 toTexture:colorTexture
+          destinationSlice:0
+          destinationLevel:0
+         destinationOrigin:(MTLOrigin){ region.origin.x, region.origin.y, 0 }];
+    [blit2 endEncoding];
+    [commandBuffer commit];
+    [commandBuffer waitUntilCompleted];
+}
+
 static void mtlnvg__renderDelete(void* uptr)
 {
     MNVGcontext* mtl = (__bridge_transfer MNVGcontext*)uptr;
@@ -488,6 +578,7 @@ NVGcontext* nvgCreateMTL(void* metalLayer, int flags)
     params.renderFill           = mtlnvg__renderFill;
     params.renderStroke         = mtlnvg__renderStroke;
     params.renderTriangles      = mtlnvg__renderTriangles;
+    params.renderBlur           = mtlnvg__renderBlur;
     params.renderDelete         = mtlnvg__renderDelete;
     params.userPtr              = (__bridge_retained void*)mtl;
     params.edgeAntiAlias        = flags & NVG_ANTIALIAS ? 1 : 0;

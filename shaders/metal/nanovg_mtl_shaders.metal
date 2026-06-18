@@ -167,3 +167,43 @@ fragment float4 fragmentShaderAA(RasterizerData in [[stage_in]],
     return color * uniforms.innerCol;
   }
 }
+
+// Gaussian blur kernel
+typedef struct {
+  float2 dir;
+  float2 resolution;
+  float radius;
+} BlurUniforms;
+
+typedef struct {
+  float4 pos [[position]];
+  float2 texcoord;
+} BlurRasterizerData;
+
+vertex BlurRasterizerData blur_vertex(uint vid [[vertex_id]]) {
+  BlurRasterizerData out;
+  float2 uv = float2((vid << 1) & 2, vid & 2);
+  out.pos = float4(uv * float2(2, -2) + float2(-1, 1), 0, 1);
+  out.texcoord = uv;
+  return out;
+}
+
+fragment float4 blur_fragment(BlurRasterizerData in [[stage_in]],
+                              constant BlurUniforms& uniforms [[buffer(0)]],
+                              texture2d<float> tex [[texture(0)]]) {
+  constexpr metal::sampler s(mag_filter::linear, min_filter::linear,
+                             address::clamp_to_edge);
+  float4 sum = float4(0.0);
+  float step = uniforms.radius / 7.0;
+  float sigma = max(uniforms.radius * 0.5, 1.0);
+  float twoSigma2 = 2.0 * sigma * sigma;
+  float totalWeight = 0.0;
+  for (int i = -7; i <= 7; i++) {
+    float off = float(i) * step;
+    float w = exp(-(off * off) / twoSigma2);
+    float2 tc = in.texcoord + uniforms.dir * off / uniforms.resolution;
+    sum += tex.sample(s, tc) * w;
+    totalWeight += w;
+  }
+  return sum / totalWeight;
+}
