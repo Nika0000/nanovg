@@ -1,0 +1,116 @@
+name: Recompile Shaders
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'shaders/d3d11/*.hlsl'
+      - 'shaders/metal/*.metal'
+
+jobs:
+  recompile-d3d11:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compile D3D11 shaders
+        shell: cmd
+        working-directory: shaders/d3d11
+        run: |
+          fxc.exe /Fh D3D11PixelShader.h /T ps_4_0_level_9_3 /E D3D11PixelShader_Main D3D11PixelShader.hlsl
+          fxc.exe /Fh D3D11PixelShaderAA.h /T ps_4_0_level_9_3 /E D3D11PixelShaderAA_Main D3D11PixelShaderAA.hlsl
+          fxc.exe /Fh D3D11VertexShader.h /T vs_4_0_level_9_3 /E D3D11VertexShader_Main D3D11VertexShader.hlsl
+          fxc.exe /Fh D3D11BlurVertexShader.h /T vs_5_0 /E D3D11BlurVertexShader_Main D3D11BlurVertexShader.hlsl
+          fxc.exe /Fh D3D11BlurPixelShader.h /T ps_5_0 /E D3D11BlurPixelShader_Main D3D11BlurPixelShader.hlsl
+
+      - name: Upload compiled shaders
+        uses: actions/upload-artifact@v4
+        with:
+          name: d3d11-shaders
+          path: shaders/d3d11/*.h
+
+  recompile-metal:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compile Metal shaders
+        run: |
+          SHADER="shaders/metal/nanovg_mtl_shaders.metal"
+          OUTDIR="shaders/metal"
+          TMPDIR=$(mktemp -d)
+
+          generate() {
+            local sdk=$1
+            local name=$2
+            local var_name="mnvg_bitcode_${name}"
+
+            xcrun -sdk "$sdk" metal -c "$SHADER" -o "$TMPDIR/${name}.air"
+            xcrun -sdk "$sdk" metallib "$TMPDIR/${name}.air" -o "$TMPDIR/${name}.metallib"
+
+            echo "unsigned char ${var_name}[] = {" > "$OUTDIR/${name}.h"
+            xxd -i < "$TMPDIR/${name}.metallib" >> "$OUTDIR/${name}.h"
+            echo "};" >> "$OUTDIR/${name}.h"
+            echo "unsigned int ${var_name}_len = sizeof(${var_name});" >> "$OUTDIR/${name}.h"
+
+            echo "Generated $name ($(wc -c < "$TMPDIR/${name}.metallib") bytes)"
+          }
+
+          generate macosx macos
+          generate iphoneos ios
+          generate appletvos tvos
+          generate iphonesimulator simulator
+
+          rm -rf "$TMPDIR"
+
+      - name: Upload compiled shaders
+        uses: actions/upload-artifact@v4
+        with:
+          name: metal-shaders
+          path: |
+            shaders/metal/macos.h
+            shaders/metal/ios.h
+            shaders/metal/tvos.h
+            shaders/metal/simulator.h
+
+  create-pr:
+    runs-on: ubuntu-latest
+    needs: [recompile-d3d11, recompile-metal]
+    if: "!cancelled() && (needs.recompile-d3d11.result == 'success' || needs.recompile-metal.result == 'success')"
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download D3D11 shaders
+        if: needs.recompile-d3d11.result == 'success'
+        uses: actions/download-artifact@v4
+        with:
+          name: d3d11-shaders
+          path: shaders/d3d11
+
+      - name: Download Metal shaders
+        if: needs.recompile-metal.result == 'success'
+        uses: actions/download-artifact@v4
+        with:
+          name: metal-shaders
+          path: shaders/metal
+
+      - name: Check for changes
+        id: changes
+        run: |
+          git diff --quiet && echo "changed=false" >> $GITHUB_OUTPUT || echo "changed=true" >> $GITHUB_OUTPUT
+
+      - name: Create Pull Request
+        if: steps.changes.outputs.changed == 'true'
+        uses: peter-evans/create-pull-request@v6
+        with:
+          branch: ci/recompile-shaders
+          commit-message: "chore: recompile shaders from source"
+          title: "chore: recompile shaders"
+          body: |
+            Automated shader recompilation triggered by source changes in `shaders/`.
+
+            This PR updates the compiled shader headers to match the latest source.
+          delete-branch: true

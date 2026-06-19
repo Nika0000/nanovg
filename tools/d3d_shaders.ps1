@@ -1,5 +1,5 @@
 
-$files = "D3D11PixelShader", "D3D11PixelShaderAA", "D3D11VertexShader"
+$files = "D3D11PixelShader", "D3D11PixelShaderAA", "D3D11VertexShader", "D3D11BlurPixelShader", "D3D11BlurVertexShader"
 $types = "ps_5_0", "ps_5_0", "vs_5_0"
 
 for($i=0; $i -lt $files.Length; $i++)

@@ -117,6 +117,19 @@ enum NVGimageFlagsGL {
 #include <math.h>
 #include "nanovg.h"
 
+#if defined(NANOVG_GL3) || defined(NANOVG_GLES2) || defined(NANOVG_GLES3)
+#  ifndef NANOVG_FBO_VALID
+#    define NANOVG_FBO_VALID 1
+#  endif
+#elif defined(NANOVG_GL2)
+#  ifdef __APPLE__
+#    include <OpenGL/glext.h>
+#    ifndef NANOVG_FBO_VALID
+#      define NANOVG_FBO_VALID 1
+#    endif
+#  endif
+#endif
+
 enum GLNVGuniformLoc {
 	GLNVG_LOC_VIEWSIZE,
 	GLNVG_LOC_TEX,
@@ -234,6 +247,18 @@ struct GLNVGfragUniforms {
 };
 typedef struct GLNVGfragUniforms GLNVGfragUniforms;
 
+struct GLNVGblurContext {
+	GLNVGshader shader;
+	GLint locTex;
+	GLint locDir;
+	GLint locResolution;
+	GLint locRadius;
+	GLuint fbo[2];
+	GLuint tex[2];
+	int texW, texH;
+};
+typedef struct GLNVGblurContext GLNVGblurContext;
+
 struct GLNVGcontext {
 	GLNVGshader shader;
 	GLNVGtexture* textures;
@@ -276,6 +301,10 @@ struct GLNVGcontext {
 	#endif
 
 	int dummyTex;
+
+	GLNVGblurContext blur;
+	GLuint blurVAO;
+	GLuint blurVBO;
 };
 typedef struct GLNVGcontext GLNVGcontext;
 
@@ -514,6 +543,7 @@ static void glnvg__getUniforms(GLNVGshader* shader)
 }
 
 static int glnvg__renderCreateTexture(void* uptr, int type, int w, int h, int imageFlags, const unsigned char* data);
+static int glnvg__createBlurShader(GLNVGcontext* gl);
 
 static int glnvg__renderCreate(void* uptr)
 {
@@ -721,6 +751,8 @@ static int glnvg__renderCreate(void* uptr)
 	// Some platforms does not allow to have samples to unset textures.
 	// Create empty one which is bound when there's no texture specified.
 	gl->dummyTex = glnvg__renderCreateTexture(gl, NVG_TEXTURE_ALPHA, 1, 1, 0, NULL);
+
+	glnvg__createBlurShader(gl);
 
 	glnvg__checkError(gl, "create done");
 
@@ -1581,11 +1613,288 @@ error:
 	if (gl->ncalls > 0) gl->ncalls--;
 }
 
+static const char* glnvg__blurVertShader =
+#if defined NANOVG_GL3
+	"#version 150 core\n"
+	"in vec2 vertex;\n"
+	"out vec2 vTexCoord;\n"
+#elif defined NANOVG_GLES3
+	"#version 300 es\n"
+	"in vec2 vertex;\n"
+	"out vec2 vTexCoord;\n"
+#else
+	"attribute vec2 vertex;\n"
+	"varying vec2 vTexCoord;\n"
+#endif
+	"void main() {\n"
+	"	vTexCoord = vertex * 0.5 + 0.5;\n"
+	"	gl_Position = vec4(vertex, 0.0, 1.0);\n"
+	"}\n";
+
+static const char* glnvg__blurFragShader =
+#if defined NANOVG_GL3
+	"#version 150 core\n"
+	"uniform sampler2D tex;\n"
+	"uniform vec2 dir;\n"
+	"uniform vec2 resolution;\n"
+	"uniform float radius;\n"
+	"in vec2 vTexCoord;\n"
+	"out vec4 outColor;\n"
+#elif defined NANOVG_GLES3
+	"#version 300 es\n"
+	"precision highp float;\n"
+	"uniform sampler2D tex;\n"
+	"uniform vec2 dir;\n"
+	"uniform vec2 resolution;\n"
+	"uniform float radius;\n"
+	"in vec2 vTexCoord;\n"
+	"out vec4 outColor;\n"
+#else
+	"#ifdef GL_ES\n"
+	"precision highp float;\n"
+	"#endif\n"
+	"uniform sampler2D tex;\n"
+	"uniform vec2 dir;\n"
+	"uniform vec2 resolution;\n"
+	"uniform float radius;\n"
+	"varying vec2 vTexCoord;\n"
+#endif
+	"void main() {\n"
+	"	vec4 sum = vec4(0.0);\n"
+	"	float step = radius / 7.0;\n"
+	"	float sigma = radius * 0.5;\n"
+	"	float twoSigma2 = 2.0 * sigma * sigma;\n"
+	"	float totalWeight = 0.0;\n"
+	"	for (int i = -7; i <= 7; i++) {\n"
+	"		float off = float(i) * step;\n"
+	"		float w = exp(-(off*off) / twoSigma2);\n"
+	"		vec2 tc = vTexCoord + dir * off / resolution;\n"
+#if defined(NANOVG_GL3) || defined(NANOVG_GLES3)
+	"		sum += texture(tex, tc) * w;\n"
+#else
+	"		sum += texture2D(tex, tc) * w;\n"
+#endif
+	"		totalWeight += w;\n"
+	"	}\n"
+	"	sum /= totalWeight;\n"
+#if defined(NANOVG_GL3) || defined(NANOVG_GLES3)
+	"	outColor = sum;\n"
+#else
+	"	gl_FragColor = sum;\n"
+#endif
+	"}\n";
+
+static int glnvg__createBlurShader(GLNVGcontext* gl)
+{
+#ifdef NANOVG_FBO_VALID
+	GLNVGblurContext* blur = &gl->blur;
+	GLint status;
+	GLuint prog, vert, frag;
+
+	prog = glCreateProgram();
+	vert = glCreateShader(GL_VERTEX_SHADER);
+	frag = glCreateShader(GL_FRAGMENT_SHADER);
+
+	glShaderSource(vert, 1, &glnvg__blurVertShader, 0);
+	glCompileShader(vert);
+	glGetShaderiv(vert, GL_COMPILE_STATUS, &status);
+	if (status != GL_TRUE) { glnvg__dumpShaderError(vert, "blur", "vert"); glDeleteShader(vert); glDeleteShader(frag); glDeleteProgram(prog); return 0; }
+
+	glShaderSource(frag, 1, &glnvg__blurFragShader, 0);
+	glCompileShader(frag);
+	glGetShaderiv(frag, GL_COMPILE_STATUS, &status);
+	if (status != GL_TRUE) { glnvg__dumpShaderError(frag, "blur", "frag"); glDeleteShader(vert); glDeleteShader(frag); glDeleteProgram(prog); return 0; }
+
+	glAttachShader(prog, vert);
+	glAttachShader(prog, frag);
+	glBindAttribLocation(prog, 0, "vertex");
+	glLinkProgram(prog);
+	glGetProgramiv(prog, GL_LINK_STATUS, &status);
+	if (status != GL_TRUE) { glnvg__dumpProgramError(prog, "blur"); return 0; }
+
+	blur->shader.prog = prog;
+	blur->shader.vert = vert;
+	blur->shader.frag = frag;
+	blur->locTex = glGetUniformLocation(prog, "tex");
+	blur->locDir = glGetUniformLocation(prog, "dir");
+	blur->locResolution = glGetUniformLocation(prog, "resolution");
+	blur->locRadius = glGetUniformLocation(prog, "radius");
+
+	// Fullscreen quad VBO
+	{
+		float quad[] = { -1,-1, 1,-1, -1,1, 1,1 };
+#if defined NANOVG_GL3
+		glGenVertexArrays(1, &gl->blurVAO);
+#endif
+		glGenBuffers(1, &gl->blurVBO);
+#if defined NANOVG_GL3
+		glBindVertexArray(gl->blurVAO);
+#endif
+		glBindBuffer(GL_ARRAY_BUFFER, gl->blurVBO);
+		glBufferData(GL_ARRAY_BUFFER, sizeof(quad), quad, GL_STATIC_DRAW);
+#if defined NANOVG_GL3
+		glEnableVertexAttribArray(0);
+		glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, 0);
+		glBindVertexArray(0);
+#endif
+		glBindBuffer(GL_ARRAY_BUFFER, 0);
+	}
+
+	return 1;
+#else
+	return 0;
+#endif
+}
+
+static void glnvg__ensureBlurFBOs(GLNVGcontext* gl, int w, int h)
+{
+#ifdef NANOVG_FBO_VALID
+	GLNVGblurContext* blur = &gl->blur;
+	if (blur->texW == w && blur->texH == h && blur->fbo[0] != 0) return;
+
+	// Delete old
+	if (blur->fbo[0]) glDeleteFramebuffers(2, blur->fbo);
+	if (blur->tex[0]) glDeleteTextures(2, blur->tex);
+
+	blur->texW = w;
+	blur->texH = h;
+
+	glGenTextures(2, blur->tex);
+	glGenFramebuffers(2, blur->fbo);
+
+	for (int i = 0; i < 2; i++) {
+		glBindTexture(GL_TEXTURE_2D, blur->tex[i]);
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+		glBindFramebuffer(GL_FRAMEBUFFER, blur->fbo[i]);
+		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, blur->tex[i], 0);
+	}
+
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+	glBindTexture(GL_TEXTURE_2D, 0);
+#endif
+}
+
+static void glnvg__renderBlur(void* uptr, float x, float y, float w, float h, float radius, float devicePixelRatio)
+{
+#ifdef NANOVG_FBO_VALID
+	GLNVGcontext* gl = (GLNVGcontext*)uptr;
+	GLNVGblurContext* blur = &gl->blur;
+
+	if (blur->shader.prog == 0) return;
+
+	int px = (int)(x * devicePixelRatio);
+	int py = (int)(y * devicePixelRatio);
+	int pw = (int)(w * devicePixelRatio);
+	int ph = (int)(h * devicePixelRatio);
+	float pRadius = radius * devicePixelRatio;
+
+	if (pw <= 0 || ph <= 0) return;
+
+	glnvg__ensureBlurFBOs(gl, pw, ph);
+
+	GLint defaultFBO;
+	glGetIntegerv(GL_FRAMEBUFFER_BINDING, &defaultFBO);
+
+	GLint viewport[4];
+	glGetIntegerv(GL_VIEWPORT, viewport);
+
+	int srcY = viewport[3] - py - ph;
+
+	// Copy region from default framebuffer into blur->tex[0] using glCopyTexSubImage2D
+	glBindTexture(GL_TEXTURE_2D, blur->tex[0]);
+	glCopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, px, srcY, pw, ph);
+
+	// Set up for blur passes
+	glUseProgram(blur->shader.prog);
+	glUniform1i(blur->locTex, 0);
+	glUniform2f(blur->locResolution, (float)pw, (float)ph);
+	glUniform1f(blur->locRadius, pRadius);
+
+	glDisable(GL_BLEND);
+	glDisable(GL_DEPTH_TEST);
+	glDisable(GL_STENCIL_TEST);
+	glDisable(GL_SCISSOR_TEST);
+	glDisable(GL_CULL_FACE);
+	glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+	glViewport(0, 0, pw, ph);
+	glActiveTexture(GL_TEXTURE0);
+
+#if defined NANOVG_GL3
+	glBindVertexArray(gl->blurVAO);
+#else
+	glBindBuffer(GL_ARRAY_BUFFER, gl->blurVBO);
+	glEnableVertexAttribArray(0);
+	glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, 0);
+#endif
+
+	// Horizontal pass: tex[0] -> fbo[1]
+	glBindFramebuffer(GL_FRAMEBUFFER, blur->fbo[1]);
+	glBindTexture(GL_TEXTURE_2D, blur->tex[0]);
+	glUniform2f(blur->locDir, 1.0f, 0.0f);
+	glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+
+	// Vertical pass: tex[1] -> fbo[0]
+	glBindFramebuffer(GL_FRAMEBUFFER, blur->fbo[0]);
+	glBindTexture(GL_TEXTURE_2D, blur->tex[1]);
+	glUniform2f(blur->locDir, 0.0f, 1.0f);
+	glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+
+#if defined NANOVG_GL3
+	glBindVertexArray(0);
+#else
+	glDisableVertexAttribArray(0);
+	glBindBuffer(GL_ARRAY_BUFFER, 0);
+#endif
+
+	// Blit result back to the default framebuffer
+	glBindFramebuffer(GL_READ_FRAMEBUFFER, blur->fbo[0]);
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, defaultFBO);
+	glBlitFramebuffer(0, 0, pw, ph,
+	                  px, srcY, px + pw, srcY + ph,
+	                  GL_COLOR_BUFFER_BIT, GL_NEAREST);
+
+	// Restore state
+	glBindFramebuffer(GL_FRAMEBUFFER, defaultFBO);
+	glViewport(viewport[0], viewport[1], viewport[2], viewport[3]);
+	glEnable(GL_BLEND);
+	glBindTexture(GL_TEXTURE_2D, 0);
+	glUseProgram(0);
+
+#if NANOVG_GL_USE_STATE_FILTER
+	gl->boundTexture = 0;
+	gl->blendFunc.srcRGB = GL_INVALID_ENUM;
+	gl->blendFunc.srcAlpha = GL_INVALID_ENUM;
+	gl->blendFunc.dstRGB = GL_INVALID_ENUM;
+	gl->blendFunc.dstAlpha = GL_INVALID_ENUM;
+#endif
+
+#else
+	NVG_NOTUSED(uptr);
+	NVG_NOTUSED(x); NVG_NOTUSED(y); NVG_NOTUSED(w); NVG_NOTUSED(h);
+	NVG_NOTUSED(radius); NVG_NOTUSED(devicePixelRatio);
+#endif
+}
+
 static void glnvg__renderDelete(void* uptr)
 {
 	GLNVGcontext* gl = (GLNVGcontext*)uptr;
 	int i;
 	if (gl == NULL) return;
+
+	glnvg__deleteShader(&gl->blur.shader);
+#ifdef NANOVG_FBO_VALID
+	if (gl->blur.fbo[0]) glDeleteFramebuffers(2, gl->blur.fbo);
+	if (gl->blur.tex[0]) glDeleteTextures(2, gl->blur.tex);
+#if defined NANOVG_GL3
+	if (gl->blurVAO) glDeleteVertexArrays(1, &gl->blurVAO);
+#endif
+	if (gl->blurVBO) glDeleteBuffers(1, &gl->blurVBO);
+#endif
 
 	glnvg__deleteShader(&gl->shader);
 
@@ -1643,6 +1952,7 @@ NVGcontext* nvgCreateGLES3(int flags)
 	params.renderFill = glnvg__renderFill;
 	params.renderStroke = glnvg__renderStroke;
 	params.renderTriangles = glnvg__renderTriangles;
+	params.renderBlur = glnvg__renderBlur;
 	params.renderDelete = glnvg__renderDelete;
 	params.userPtr = gl;
 	params.edgeAntiAlias = flags & NVG_ANTIALIAS ? 1 : 0;
