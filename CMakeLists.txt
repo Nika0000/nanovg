@@ -32,28 +32,42 @@ if(NANOVG_PLATFORM_DEKO3D)
 endif()
 
 if(NANOVG_BUILD_EXAMPLES)
-    find_package(glfw3 REQUIRED)
-    find_package(OpenGL REQUIRED)
-
     set(NANOVG_EXAMPLE_COMMON
         examples/demo.c
         examples/perf.c
     )
 
-    add_executable(example_gl3 examples/example_gl3.c ${NANOVG_EXAMPLE_COMMON})
-    target_include_directories(example_gl3 PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/include/nanovg
-        ${CMAKE_CURRENT_SOURCE_DIR}/third_party
-        ${CMAKE_CURRENT_SOURCE_DIR}/examples
-    )
-    target_link_libraries(example_gl3 nanovg glfw OpenGL::GL ${CMAKE_DL_LIBS})
-    if(UNIX)
-        target_link_libraries(example_gl3 m)
+    if(WIN32)
+        add_executable(example_d3d11 examples/example_d3d11.c ${NANOVG_EXAMPLE_COMMON})
+        target_include_directories(example_d3d11 PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/include/nanovg
+            ${CMAKE_CURRENT_SOURCE_DIR}/third_party
+            ${CMAKE_CURRENT_SOURCE_DIR}/examples
+            ${CMAKE_CURRENT_SOURCE_DIR}/shaders/d3d11
+        )
+        target_compile_definitions(example_d3d11 PRIVATE NANOVG_D3D11)
+        target_link_libraries(example_d3d11 nanovg d3d11 dxguid)
     endif()
 
-    if(NOT APPLE)
-        find_package(GLEW REQUIRED)
-        target_link_libraries(example_gl3 GLEW::GLEW)
-        target_compile_definitions(example_gl3 PRIVATE NANOVG_GLEW)
+    find_package(glfw3 QUIET)
+    if(glfw3_FOUND)
+        find_package(OpenGL REQUIRED)
+
+        add_executable(example_gl3 examples/example_gl3.c ${NANOVG_EXAMPLE_COMMON})
+        target_include_directories(example_gl3 PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/include/nanovg
+            ${CMAKE_CURRENT_SOURCE_DIR}/third_party
+            ${CMAKE_CURRENT_SOURCE_DIR}/examples
+        )
+        target_link_libraries(example_gl3 nanovg glfw OpenGL::GL ${CMAKE_DL_LIBS})
+        if(UNIX)
+            target_link_libraries(example_gl3 m)
+        endif()
+
+        if(NOT APPLE)
+            find_package(GLEW REQUIRED)
+            target_link_libraries(example_gl3 GLEW::GLEW)
+            target_compile_definitions(example_gl3 PRIVATE NANOVG_GLEW)
+        endif()
     endif()
 endif()
