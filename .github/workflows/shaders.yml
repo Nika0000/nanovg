@@ -4,24 +4,33 @@ on:
   push:
     branches: [main]
     paths:
-      - 'shaders/d3d11/*.hlsl'
-      - 'shaders/metal/*.metal'
+      - "shaders/d3d11/*.hlsl"
+      - "shaders/metal/*.metal"
 
 jobs:
   recompile-d3d11:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
+
+      - name: Find Windows SDK fxc.exe
+        id: fxc
+        shell: pwsh
+        run: |
+          $fxc = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\fxc.exe" | Sort-Object FullName -Descending | Select-Object -First 1
+          if (-not $fxc) { throw "fxc.exe not found" }
+          echo "dir=$($fxc.DirectoryName)" >> $env:GITHUB_OUTPUT
 
       - name: Compile D3D11 shaders
         shell: cmd
         working-directory: shaders/d3d11
         run: |
-          fxc.exe /Fh D3D11PixelShader.h /T ps_4_0_level_9_3 /E D3D11PixelShader_Main D3D11PixelShader.hlsl
-          fxc.exe /Fh D3D11PixelShaderAA.h /T ps_4_0_level_9_3 /E D3D11PixelShaderAA_Main D3D11PixelShaderAA.hlsl
-          fxc.exe /Fh D3D11VertexShader.h /T vs_4_0_level_9_3 /E D3D11VertexShader_Main D3D11VertexShader.hlsl
-          fxc.exe /Fh D3D11BlurVertexShader.h /T vs_5_0 /E D3D11BlurVertexShader_Main D3D11BlurVertexShader.hlsl
-          fxc.exe /Fh D3D11BlurPixelShader.h /T ps_5_0 /E D3D11BlurPixelShader_Main D3D11BlurPixelShader.hlsl
+          set FXC=${{ steps.fxc.outputs.dir }}\fxc.exe
+          "%FXC%" /Fh D3D11PixelShader.h /T ps_4_0_level_9_3 /E D3D11PixelShader_Main D3D11PixelShader.hlsl
+          "%FXC%" /Fh D3D11PixelShaderAA.h /T ps_4_0_level_9_3 /E D3D11PixelShaderAA_Main D3D11PixelShaderAA.hlsl
+          "%FXC%" /Fh D3D11VertexShader.h /T vs_4_0_level_9_3 /E D3D11VertexShader_Main D3D11VertexShader.hlsl
+          "%FXC%" /Fh D3D11BlurVertexShader.h /T vs_5_0 /E D3D11BlurVertexShader_Main D3D11BlurVertexShader.hlsl
+          "%FXC%" /Fh D3D11BlurPixelShader.h /T ps_5_0 /E D3D11BlurPixelShader_Main D3D11BlurPixelShader.hlsl
 
       - name: Upload compiled shaders
         uses: actions/upload-artifact@v4
@@ -32,7 +41,7 @@ jobs:
   recompile-metal:
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Compile Metal shaders
         run: |
@@ -81,7 +90,7 @@ jobs:
       contents: write
       pull-requests: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Download D3D11 shaders
         if: needs.recompile-d3d11.result == 'success'
