@@ -4,15 +4,16 @@ project(nanovg C CXX)
 option(NANOVG_BUILD_EXAMPLES "Build example programs" OFF)
 option(NANOVG_PLATFORM_PS4 "Enable PS4 backend" OFF)
 option(NANOVG_PLATFORM_DEKO3D "Enable Nintendo Switch/deko3d backend" OFF)
+option(NANOVG_PLATFORM_METAL "Enable Metal backend" OFF)
 option(NANOVG_FONTSTASH_STREAM "Enable font streaming" OFF)
 
 add_library(nanovg STATIC src/nanovg.c)
 target_include_directories(nanovg PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/include/nanovg
-)
-target_include_directories(nanovg PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party
+)
+target_include_directories(nanovg PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/d3d11
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/metal
 )
@@ -29,6 +30,11 @@ if(NANOVG_PLATFORM_DEKO3D)
     file(GLOB_RECURSE NANOVG_DEKO3D_SRC src/deko3d/*.cpp)
     target_sources(nanovg PRIVATE ${NANOVG_DEKO3D_SRC})
     target_include_directories(nanovg PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/shaders/deko3d)
+endif()
+
+if(NANOVG_PLATFORM_METAL)
+    enable_language(OBJC)
+    target_sources(nanovg PRIVATE src/metal/nanovg_mtl.m)
 endif()
 
 if(NANOVG_BUILD_EXAMPLES)
