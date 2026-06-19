@@ -6,6 +6,7 @@ on:
     paths:
       - "shaders/d3d11/*.hlsl"
       - "shaders/metal/*.metal"
+  workflow_dispatch:
 
 jobs:
   recompile-d3d11:
