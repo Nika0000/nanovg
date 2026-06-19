@@ -1466,7 +1466,6 @@ error:
 
 static void D3Dnvg__blurEnsureResources(struct D3DNVGcontext* D3D, int w, int h)
 {
-	HRESULT hr;
 	D3D11_TEXTURE2D_DESC texDesc;
 	D3D11_RENDER_TARGET_VIEW_DESC rtvDesc;
 	D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc;
@@ -1486,9 +1485,9 @@ static void D3Dnvg__blurEnsureResources(struct D3DNVGcontext* D3D, int w, int h)
 
 	/* Create shaders from precompiled bytecode on first call */
 	if (D3D->pBlurVS == NULL) {
-		D3D_API_5(D3D->pDevice, CreateVertexShader,
+		D3D_API_4(D3D->pDevice, CreateVertexShader,
 			g_D3D11BlurVertexShader_Main, sizeof(g_D3D11BlurVertexShader_Main), NULL, &D3D->pBlurVS);
-		D3D_API_5(D3D->pDevice, CreatePixelShader,
+		D3D_API_4(D3D->pDevice, CreatePixelShader,
 			g_D3D11BlurPixelShader_Main, sizeof(g_D3D11BlurPixelShader_Main), NULL, &D3D->pBlurPS);
 	}
 
@@ -1509,7 +1508,7 @@ static void D3Dnvg__blurEnsureResources(struct D3DNVGcontext* D3D, int w, int h)
 		cbDesc.Usage = D3D11_USAGE_DYNAMIC;
 		cbDesc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
 		cbDesc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
-		D3D_API_2(D3D->pDevice, CreateBuffer, &cbDesc, NULL, &D3D->pBlurCB);
+		D3D_API_3(D3D->pDevice, CreateBuffer, &cbDesc, NULL, &D3D->pBlurCB);
 	}
 
 	/* Create ping-pong textures */
@@ -1523,21 +1522,21 @@ static void D3Dnvg__blurEnsureResources(struct D3DNVGcontext* D3D, int w, int h)
 	texDesc.Usage = D3D11_USAGE_DEFAULT;
 	texDesc.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
 
-	D3D_API_2(D3D->pDevice, CreateTexture2D, &texDesc, NULL, &D3D->pBlurTex0);
-	D3D_API_2(D3D->pDevice, CreateTexture2D, &texDesc, NULL, &D3D->pBlurTex1);
+	D3D_API_3(D3D->pDevice, CreateTexture2D, &texDesc, NULL, &D3D->pBlurTex0);
+	D3D_API_3(D3D->pDevice, CreateTexture2D, &texDesc, NULL, &D3D->pBlurTex1);
 
 	memset(&rtvDesc, 0, sizeof(rtvDesc));
 	rtvDesc.Format = texDesc.Format;
 	rtvDesc.ViewDimension = D3D11_RTV_DIMENSION_TEXTURE2D;
-	D3D_API_2(D3D->pDevice, CreateRenderTargetView, (ID3D11Resource*)D3D->pBlurTex0, &rtvDesc, &D3D->pBlurRTV0);
-	D3D_API_2(D3D->pDevice, CreateRenderTargetView, (ID3D11Resource*)D3D->pBlurTex1, &rtvDesc, &D3D->pBlurRTV1);
+	D3D_API_3(D3D->pDevice, CreateRenderTargetView, (ID3D11Resource*)D3D->pBlurTex0, &rtvDesc, &D3D->pBlurRTV0);
+	D3D_API_3(D3D->pDevice, CreateRenderTargetView, (ID3D11Resource*)D3D->pBlurTex1, &rtvDesc, &D3D->pBlurRTV1);
 
 	memset(&srvDesc, 0, sizeof(srvDesc));
 	srvDesc.Format = texDesc.Format;
 	srvDesc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
 	srvDesc.Texture2D.MipLevels = 1;
-	D3D_API_2(D3D->pDevice, CreateShaderResourceView, (ID3D11Resource*)D3D->pBlurTex0, &srvDesc, &D3D->pBlurSRV0);
-	D3D_API_2(D3D->pDevice, CreateShaderResourceView, (ID3D11Resource*)D3D->pBlurTex1, &srvDesc, &D3D->pBlurSRV1);
+	D3D_API_3(D3D->pDevice, CreateShaderResourceView, (ID3D11Resource*)D3D->pBlurTex0, &srvDesc, &D3D->pBlurSRV0);
+	D3D_API_3(D3D->pDevice, CreateShaderResourceView, (ID3D11Resource*)D3D->pBlurTex1, &srvDesc, &D3D->pBlurSRV1);
 
 	D3D->blurTexWidth = w;
 	D3D->blurTexHeight = h;
@@ -1554,22 +1553,26 @@ static void D3Dnvg__renderBlur(void* uptr, float x, float y, float w, float h, f
 	D3D11_BOX srcBox;
 	D3D11_MAPPED_SUBRESOURCE mapped;
 	D3D11_VIEWPORT vp;
+	D3D11_VIEWPORT origVP;
+	UINT numVPs = 1;
 	ID3D11ShaderResourceView* nullSRV = NULL;
 	float cbData[8];
 	int ix, iy, iw, ih;
 
-	(void)devicePixelRatio;
 
-	/* Get current render target */
-	D3D_API_2(D3D->pDeviceContext, OMGetRenderTargets, 1, &origRTV, &origDSV);
+
+	/* Get current render target and viewport */
+	D3D_API_2(D3D->pDeviceContext, RSGetViewports, &numVPs, &origVP);
+	D3D_API_3(D3D->pDeviceContext, OMGetRenderTargets, 1, &origRTV, &origDSV);
 	if (origRTV == NULL) return;
 
 	D3D_API_1(origRTV, GetResource, &rtvResource);
 	backbufferTex = (ID3D11Texture2D*)rtvResource;
 	D3D_API_1(backbufferTex, GetDesc, &bbDesc);
 
-	ix = (int)x; iy = (int)y;
-	iw = (int)(w + 0.5f); ih = (int)(h + 0.5f);
+	ix = (int)(x * devicePixelRatio); iy = (int)(y * devicePixelRatio);
+	iw = (int)(w * devicePixelRatio + 0.5f); ih = (int)(h * devicePixelRatio + 0.5f);
+	radius *= devicePixelRatio;
 	if (ix < 0) { iw += ix; ix = 0; }
 	if (iy < 0) { ih += iy; iy = 0; }
 	if (ix + iw > (int)bbDesc.Width) iw = (int)bbDesc.Width - ix;
@@ -1582,11 +1585,10 @@ static void D3Dnvg__renderBlur(void* uptr, float x, float y, float w, float h, f
 	}
 
 	D3Dnvg__blurEnsureResources(D3D, iw, ih);
-
 	/* Copy region from backbuffer to blur tex 0 */
 	srcBox.left = ix; srcBox.top = iy; srcBox.front = 0;
 	srcBox.right = ix + iw; srcBox.bottom = iy + ih; srcBox.back = 1;
-	D3D_API_7(D3D->pDeviceContext, CopySubresourceRegion,
+	D3D_API_8(D3D->pDeviceContext, CopySubresourceRegion,
 		(ID3D11Resource*)D3D->pBlurTex0, 0, 0, 0, 0, rtvResource, 0, &srcBox);
 
 	/* Setup viewport */
@@ -1595,18 +1597,22 @@ static void D3Dnvg__renderBlur(void* uptr, float x, float y, float w, float h, f
 	vp.MinDepth = 0.0f; vp.MaxDepth = 1.0f;
 	D3D_API_2(D3D->pDeviceContext, RSSetViewports, 1, &vp);
 
+	/* Disable blend, depth/stencil, and culling for blur passes */
+	D3D_API_3(D3D->pDeviceContext, OMSetBlendState, NULL, NULL, 0xFFFFFFFF);
+	D3D_API_2(D3D->pDeviceContext, OMSetDepthStencilState, NULL, 0);
+	D3D_API_1(D3D->pDeviceContext, RSSetState, D3D->pRSNoCull);
+
 	/* Set shaders */
-	D3D_API_2(D3D->pDeviceContext, VSSetShader, D3D->pBlurVS, NULL, 0);
-	D3D_API_2(D3D->pDeviceContext, IASetInputLayout, NULL, NULL);
+	D3D_API_3(D3D->pDeviceContext, VSSetShader, D3D->pBlurVS, NULL, 0);
+	D3D_API_1(D3D->pDeviceContext, IASetInputLayout, NULL);
 	D3D_API_1(D3D->pDeviceContext, IASetPrimitiveTopology, D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
 	/* Horizontal pass: tex0 -> tex1 */
-	/* CB layout: float2 dir, float2 resolution, float radius, float3 padding */
-	cbData[0] = 1.0f; cbData[1] = 0.0f;           /* dir */
-	cbData[2] = (float)iw; cbData[3] = (float)ih;  /* resolution */
+	cbData[0] = 1.0f; cbData[1] = 0.0f;
+	cbData[2] = (float)iw; cbData[3] = (float)ih;
 	cbData[4] = radius; cbData[5] = 0; cbData[6] = 0; cbData[7] = 0;
 
-	D3D_API_3(D3D->pDeviceContext, Map, (ID3D11Resource*)D3D->pBlurCB, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
+	D3D_API_5(D3D->pDeviceContext, Map, (ID3D11Resource*)D3D->pBlurCB, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
 	memcpy(mapped.pData, cbData, 32);
 	D3D_API_2(D3D->pDeviceContext, Unmap, (ID3D11Resource*)D3D->pBlurCB, 0);
 
@@ -1618,31 +1624,33 @@ static void D3Dnvg__renderBlur(void* uptr, float x, float y, float w, float h, f
 
 	D3D_API_2(D3D->pDeviceContext, Draw, 3, 0);
 
-	/* Unbind SRV */
+	/* Vertical pass: tex1 -> backbuffer */
+	/* First unbind tex1 as RT by setting backbuffer as RT */
 	D3D_API_3(D3D->pDeviceContext, PSSetShaderResources, 0, 1, &nullSRV);
+	D3D_API_3(D3D->pDeviceContext, OMSetRenderTargets, 1, &origRTV, NULL);
 
-	/* Vertical pass: tex1 -> tex0 */
+	/* Set viewport to blur region position on backbuffer */
+	vp.TopLeftX = (float)ix; vp.TopLeftY = (float)iy;
+	vp.Width = (float)iw; vp.Height = (float)ih;
+	D3D_API_2(D3D->pDeviceContext, RSSetViewports, 1, &vp);
+
+	/* Update CB for vertical direction */
 	cbData[0] = 0.0f; cbData[1] = 1.0f;
-	D3D_API_3(D3D->pDeviceContext, Map, (ID3D11Resource*)D3D->pBlurCB, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
+	D3D_API_5(D3D->pDeviceContext, Map, (ID3D11Resource*)D3D->pBlurCB, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
 	memcpy(mapped.pData, cbData, 32);
 	D3D_API_2(D3D->pDeviceContext, Unmap, (ID3D11Resource*)D3D->pBlurCB, 0);
 
+	/* Now safe to bind tex1 as SRV */
 	D3D_API_3(D3D->pDeviceContext, PSSetShaderResources, 0, 1, &D3D->pBlurSRV1);
-	D3D_API_3(D3D->pDeviceContext, OMSetRenderTargets, 1, &D3D->pBlurRTV0, NULL);
 
 	D3D_API_2(D3D->pDeviceContext, Draw, 3, 0);
 
-	/* Unbind SRV */
+	/* Cleanup */
 	D3D_API_3(D3D->pDeviceContext, PSSetShaderResources, 0, 1, &nullSRV);
 
-	/* Copy result back to backbuffer */
-	srcBox.left = 0; srcBox.top = 0; srcBox.front = 0;
-	srcBox.right = iw; srcBox.bottom = ih; srcBox.back = 1;
-	D3D_API_7(D3D->pDeviceContext, CopySubresourceRegion,
-		rtvResource, 0, ix, iy, 0, (ID3D11Resource*)D3D->pBlurTex0, 0, &srcBox);
-
-	/* Restore original render target */
+	/* Restore original render target and viewport */
 	D3D_API_3(D3D->pDeviceContext, OMSetRenderTargets, 1, &origRTV, origDSV);
+	D3D_API_2(D3D->pDeviceContext, RSSetViewports, 1, &origVP);
 
 	D3D_API_RELEASE(origRTV);
 	D3D_API_RELEASE(origDSV);

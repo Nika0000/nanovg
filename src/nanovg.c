@@ -2586,15 +2586,23 @@ float nvgText(NVGcontext* ctx, float x, float y, const char* string, const char*
 
 void nvgBlurRegion(NVGcontext* ctx, float x, float y, float w, float h, float radius)
 {
+	NVGstate* state;
+	float tx, ty, tx2, ty2;
+
 	if (radius <= 0 || w <= 0 || h <= 0) return;
 	if (ctx->params.renderBlur == NULL) return;
+
+	// Transform coordinates through the current nanovg transform
+	state = nvg__getState(ctx);
+	nvgTransformPoint(&tx, &ty, state->xform, x, y);
+	nvgTransformPoint(&tx2, &ty2, state->xform, x + w, y + h);
 
 	if(ctx->textTextureDirty != 0) {
 		nvg__flushTextTexture(ctx);
 		ctx->textTextureDirty = 0;
 	}
 	ctx->params.renderFlush(ctx->params.userPtr);
-	ctx->params.renderBlur(ctx->params.userPtr, x, y, w, h, radius, ctx->devicePxRatio);
+	ctx->params.renderBlur(ctx->params.userPtr, tx, ty, tx2 - tx, ty2 - ty, radius, ctx->devicePxRatio);
 }
 
 void nvgStencil(NVGcontext* ctx)
