@@ -60,21 +60,26 @@ if(NANOVG_BUILD_EXAMPLES)
     if(glfw3_FOUND)
         find_package(OpenGL REQUIRED)
 
-        add_executable(example_gl3 examples/example_gl3.c ${NANOVG_EXAMPLE_COMMON})
-        target_include_directories(example_gl3 PRIVATE
-            ${CMAKE_CURRENT_SOURCE_DIR}/include/nanovg
-            ${CMAKE_CURRENT_SOURCE_DIR}/third_party
-            ${CMAKE_CURRENT_SOURCE_DIR}/examples
-        )
-        target_link_libraries(example_gl3 nanovg glfw OpenGL::GL ${CMAKE_DL_LIBS})
-        if(UNIX)
-            target_link_libraries(example_gl3 m)
+        if(NOT APPLE)
+            find_package(GLEW QUIET)
         endif()
 
-        if(NOT APPLE)
-            find_package(GLEW REQUIRED)
-            target_link_libraries(example_gl3 GLEW::GLEW)
-            target_compile_definitions(example_gl3 PRIVATE NANOVG_GLEW)
+        if(APPLE OR GLEW_FOUND)
+            add_executable(example_gl3 examples/example_gl3.c ${NANOVG_EXAMPLE_COMMON})
+            target_include_directories(example_gl3 PRIVATE
+                ${CMAKE_CURRENT_SOURCE_DIR}/include/nanovg
+                ${CMAKE_CURRENT_SOURCE_DIR}/third_party
+                ${CMAKE_CURRENT_SOURCE_DIR}/examples
+            )
+            target_link_libraries(example_gl3 nanovg glfw OpenGL::GL ${CMAKE_DL_LIBS})
+            if(UNIX)
+                target_link_libraries(example_gl3 m)
+            endif()
+
+            if(NOT APPLE)
+                target_link_libraries(example_gl3 GLEW::GLEW)
+                target_compile_definitions(example_gl3 PRIVATE NANOVG_GLEW)
+            endif()
         endif()
     endif()
 

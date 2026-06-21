@@ -4,6 +4,9 @@
 #include <math.h>
 #ifdef NANOVG_GLEW
 #  include <GL/glew.h>
+#elif defined(__APPLE__)
+#  define GL_SILENCE_DEPRECATION
+#  include <OpenGL/gl3.h>
 #endif
 #include "nanovg.h"
 #define STB_IMAGE_WRITE_IMPLEMENTATION
