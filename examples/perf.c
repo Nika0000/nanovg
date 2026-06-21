@@ -10,7 +10,7 @@
 #include <iconv.h>
 #endif
 
-#ifdef NANOVG_D3D11
+#if defined(NANOVG_D3D11) || defined(NANOVG_VULKAN)
 
 void initGPUTimer(GPUtimer* timer) { memset(timer, 0, sizeof(*timer)); }
 void startGPUTimer(GPUtimer* timer) { (void)timer; }
@@ -59,7 +59,7 @@ int stopGPUTimer(GPUtimer* timer, float* times, int maxTimes)
 	return n;
 }
 
-#endif /* NANOVG_D3D11 */
+#endif /* NANOVG_D3D11 || NANOVG_VULKAN */
 
 
 void initGraph(PerfGraph* fps, int style, const char* name)

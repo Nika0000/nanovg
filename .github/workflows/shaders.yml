@@ -6,6 +6,8 @@ on:
     paths:
       - "shaders/d3d11/*.hlsl"
       - "shaders/metal/*.metal"
+      - "shaders/vulkan/*.vert"
+      - "shaders/vulkan/*.frag"
   workflow_dispatch:
 
 jobs:
@@ -30,8 +32,6 @@ jobs:
           "%FXC%" /Fh D3D11PixelShader.h /T ps_4_0_level_9_3 /E D3D11PixelShader_Main D3D11PixelShader.hlsl
           "%FXC%" /Fh D3D11PixelShaderAA.h /T ps_4_0_level_9_3 /E D3D11PixelShaderAA_Main D3D11PixelShaderAA.hlsl
           "%FXC%" /Fh D3D11VertexShader.h /T vs_4_0_level_9_3 /E D3D11VertexShader_Main D3D11VertexShader.hlsl
-          "%FXC%" /Fh D3D11BlurVertexShader.h /T vs_5_0 /E D3D11BlurVertexShader_Main D3D11BlurVertexShader.hlsl
-          "%FXC%" /Fh D3D11BlurPixelShader.h /T ps_5_0 /E D3D11BlurPixelShader_Main D3D11BlurPixelShader.hlsl
 
       - name: Upload compiled shaders
         uses: actions/upload-artifact@v4
@@ -83,10 +83,57 @@ jobs:
             shaders/metal/tvos.h
             shaders/metal/simulator.h
 
+  recompile-vulkan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Vulkan SDK
+        uses: humbletim/setup-vulkan-sdk@v1.2.0
+        with:
+          vulkan-query-version: 1.3.290.0
+          vulkan-components: Glslang
+          vulkan-use-cache: true
+
+      - name: Compile Vulkan shaders
+        working-directory: shaders/vulkan
+        run: |
+          glslangValidator -V fill.vert -o fill.vert.spv
+          glslangValidator -V fill.frag -o fill.frag.spv
+
+          # Convert SPIR-V to C include format (uint32_t hex array)
+          spirv_to_inc() {
+            local input=$1
+            local output=$2
+            echo "" > "$output"
+            xxd -i < "$input" | sed 's/unsigned char.*\[\] = {//;s/};//;s/unsigned int.*//;s/^ *//' | \
+              python3 -c "
+          import sys
+          data = bytes(int(x.strip().rstrip(','), 16) for x in sys.stdin.read().replace('\n', ',').split(',') if x.strip())
+          words = [int.from_bytes(data[i:i+4], 'little') for i in range(0, len(data), 4)]
+          for i in range(0, len(words), 8):
+              line = ','.join(f'0x{w:08x}' for w in words[i:i+8])
+              print(line + ',')
+          " >> "$output"
+          }
+
+          spirv_to_inc fill.vert.spv fill.vert.inc
+          spirv_to_inc fill.frag.spv fill.frag.inc
+
+          rm -f fill.vert.spv fill.frag.spv
+
+      - name: Upload compiled shaders
+        uses: actions/upload-artifact@v4
+        with:
+          name: vulkan-shaders
+          path: |
+            shaders/vulkan/fill.vert.inc
+            shaders/vulkan/fill.frag.inc
+
   create-pr:
     runs-on: ubuntu-latest
-    needs: [recompile-d3d11, recompile-metal]
-    if: "!cancelled() && (needs.recompile-d3d11.result == 'success' || needs.recompile-metal.result == 'success')"
+    needs: [recompile-d3d11, recompile-metal, recompile-vulkan]
+    if: "!cancelled() && (needs.recompile-d3d11.result == 'success' || needs.recompile-metal.result == 'success' || needs.recompile-vulkan.result == 'success')"
     permissions:
       contents: write
       pull-requests: write
@@ -106,6 +153,13 @@ jobs:
         with:
           name: metal-shaders
           path: shaders/metal
+
+      - name: Download Vulkan shaders
+        if: needs.recompile-vulkan.result == 'success'
+        uses: actions/download-artifact@v4
+        with:
+          name: vulkan-shaders
+          path: shaders/vulkan
 
       - name: Check for changes
         id: changes

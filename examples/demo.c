@@ -1213,7 +1213,7 @@ static void flipHorizontal(unsigned char* image, int w, int h, int stride)
 
 void saveScreenShot(int w, int h, int premult, const char* name)
 {
-#ifdef NANOVG_D3D11
+#if defined(NANOVG_D3D11) || defined(NANOVG_VULKAN)
 	(void)w; (void)h; (void)premult; (void)name;
 #else
 	unsigned char* image = (unsigned char*)malloc(w*h*4);

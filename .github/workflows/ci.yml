@@ -7,7 +7,7 @@ on:
     branches: [main]
 
 jobs:
-  build:
+  build-core:
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -17,20 +17,79 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Install dependencies (Linux)
-        if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libglfw3-dev libglew-dev
-
       - name: Configure
         run: cmake -B build -DCMAKE_BUILD_TYPE=Release
 
       - name: Build
         run: cmake --build build --config Release
 
-      - name: Configure with examples (Linux)
-        if: runner.os == 'Linux'
-        run: cmake -B build-examples -DCMAKE_BUILD_TYPE=Release -DNANOVG_BUILD_EXAMPLES=ON
+  build-examples-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
 
-      - name: Build with examples (Linux)
-        if: runner.os == 'Linux'
-        run: cmake --build build-examples --config Release
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y libglfw3-dev libglew-dev libvulkan-dev
+
+      - name: Configure with examples
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DNANOVG_BUILD_EXAMPLES=ON
+
+      - name: Build all examples
+        run: cmake --build build --config Release
+
+  build-examples-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Vulkan SDK
+        uses: humbletim/setup-vulkan-sdk@v1.2.0
+        with:
+          vulkan-query-version: 1.3.290.0
+          vulkan-components: Vulkan-Headers, Vulkan-Loader
+          vulkan-use-cache: true
+
+      - name: Install GLFW
+        run: |
+          vcpkg install glfw3:x64-windows
+          echo "CMAKE_TOOLCHAIN_FILE=$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" >> $env:GITHUB_ENV
+
+      - name: Configure with examples
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DNANOVG_BUILD_EXAMPLES=ON -DCMAKE_TOOLCHAIN_FILE="$env:CMAKE_TOOLCHAIN_FILE"
+
+      - name: Build D3D11 example
+        run: cmake --build build --config Release --target example_d3d11
+
+      - name: Build OpenGL example
+        run: cmake --build build --config Release --target example_gl3
+
+      - name: Build Vulkan example
+        run: cmake --build build --config Release --target example_vulkan
+
+      - name: Build Vulkan minimal example
+        run: cmake --build build --config Release --target example_vulkan_min
+
+  build-examples-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install dependencies
+        run: brew install glfw glew
+
+      - name: Configure with examples
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DNANOVG_BUILD_EXAMPLES=ON
+
+      - name: Build all examples
+        run: cmake --build build --config Release
+
+  build-metal:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Configure with Metal backend
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DNANOVG_PLATFORM_METAL=ON
+
+      - name: Build
+        run: cmake --build build --config Release

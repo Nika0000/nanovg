@@ -16,6 +16,7 @@ target_include_directories(nanovg PUBLIC
 target_include_directories(nanovg PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/d3d11
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/metal
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/vulkan
 )
 
 if(NANOVG_FONTSTASH_STREAM)
@@ -74,6 +75,37 @@ if(NANOVG_BUILD_EXAMPLES)
             find_package(GLEW REQUIRED)
             target_link_libraries(example_gl3 GLEW::GLEW)
             target_compile_definitions(example_gl3 PRIVATE NANOVG_GLEW)
+        endif()
+    endif()
+
+    find_package(Vulkan QUIET)
+    if(Vulkan_FOUND)
+        if(glfw3_FOUND)
+            add_executable(example_vulkan examples/example_vulkan.c ${NANOVG_EXAMPLE_COMMON})
+            target_include_directories(example_vulkan PRIVATE
+                ${CMAKE_CURRENT_SOURCE_DIR}/include/nanovg
+                ${CMAKE_CURRENT_SOURCE_DIR}/third_party
+                ${CMAKE_CURRENT_SOURCE_DIR}/examples
+                ${CMAKE_CURRENT_SOURCE_DIR}/shaders/vulkan
+            )
+            target_compile_definitions(example_vulkan PRIVATE NANOVG_VULKAN)
+            target_link_libraries(example_vulkan nanovg glfw Vulkan::Vulkan)
+            if(UNIX)
+                target_link_libraries(example_vulkan m)
+            endif()
+        endif()
+
+        add_executable(example_vulkan_min WIN32 examples/example_vulkan_min_no_glfw.c ${NANOVG_EXAMPLE_COMMON})
+        target_include_directories(example_vulkan_min PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/include/nanovg
+            ${CMAKE_CURRENT_SOURCE_DIR}/third_party
+            ${CMAKE_CURRENT_SOURCE_DIR}/examples
+            ${CMAKE_CURRENT_SOURCE_DIR}/shaders/vulkan
+        )
+        target_compile_definitions(example_vulkan_min PRIVATE NANOVG_VULKAN)
+        target_link_libraries(example_vulkan_min nanovg Vulkan::Vulkan)
+        if(UNIX)
+            target_link_libraries(example_vulkan_min m)
         endif()
     endif()
 endif()
