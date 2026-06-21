@@ -637,16 +637,6 @@ int nvgTextBreakLines(NVGcontext* ctx, const char* string, const char* end, floa
 
 void nvgFontQuality(NVGcontext* ctx, float quality);
 
-//
-// Blur
-//
-// Applies a Gaussian blur to an already-rendered rectangular region of the framebuffer.
-// This can be used for background blur (frosted glass): blur the region, then draw a
-// translucent shape on top.
-
-// Blurs the rectangular region (x,y,w,h) with the given blur radius (in pixels).
-void nvgBlurRegion(NVGcontext* ctx, float x, float y, float w, float h, float radius);
-
 // Work like nvgFill, but only supports drawing image with alpha channels.
 // The image is used to create a stencil buffer, which will be used for subsequent drawing operations,
 // and only the content corresponding to the non-transparent part of the stencil buffer will be displayed.
@@ -703,7 +693,6 @@ struct NVGparams {
 	void (*renderFill)(void* uptr, NVGpaint* paint, NVGcompositeOperationState compositeOperation, NVGscissor* scissor, float fringe, const float* bounds, const NVGpath* paths, int npaths);
 	void (*renderStroke)(void* uptr, NVGpaint* paint, NVGcompositeOperationState compositeOperation, NVGscissor* scissor, float fringe, float strokeWidth, const NVGpath* paths, int npaths);
 	void (*renderTriangles)(void* uptr, NVGpaint* paint, NVGcompositeOperationState compositeOperation, NVGscissor* scissor, const NVGvertex* verts, int nverts, float fringe);
-	void (*renderBlur)(void* uptr, float x, float y, float w, float h, float radius, float devicePixelRatio);
 	void (*renderDelete)(void* uptr);
 };
 typedef struct NVGparams NVGparams;

@@ -66,11 +66,10 @@ void nvd3dImageFlags(struct NVGcontext* ctx, int image, int flags);
 #include <assert.h>
 #include "nanovg.h"
 #include <d3d11.h>
+
 #include "D3D11VertexShader.h"
 #include "D3D11PixelShaderAA.h"
 #include "D3D11PixelShader.h"
-#include "D3D11BlurVertexShader.h"
-#include "D3D11BlurPixelShader.h"
 
 // The cpp calling is much simpler.
 // For 'c' calling of DX, we need to do pPtr->lpVtbl->Func(pPtr, ...)
@@ -231,20 +230,6 @@ struct D3DNVGcontext {
 	ID3D11DepthStencilState* pDepthStencilDrawAA;
 	ID3D11DepthStencilState* pDepthStencilFill;
 	ID3D11DepthStencilState* pDepthStencilDefault;
-
-	// Blur resources
-	ID3D11PixelShader* pBlurPS;
-	ID3D11VertexShader* pBlurVS;
-	ID3D11Texture2D* pBlurTex0;
-	ID3D11Texture2D* pBlurTex1;
-	ID3D11RenderTargetView* pBlurRTV0;
-	ID3D11RenderTargetView* pBlurRTV1;
-	ID3D11ShaderResourceView* pBlurSRV0;
-	ID3D11ShaderResourceView* pBlurSRV1;
-	ID3D11SamplerState* pBlurSampler;
-	ID3D11Buffer* pBlurCB;
-	int blurTexWidth;
-	int blurTexHeight;
 };
 
 static int D3Dnvg__maxi(int a, int b) { return a > b ? a : b; }
@@ -1464,199 +1449,6 @@ error:
 	if (D3D->ncalls > 0) D3D->ncalls--;
 }
 
-static void D3Dnvg__blurEnsureResources(struct D3DNVGcontext* D3D, int w, int h)
-{
-	D3D11_TEXTURE2D_DESC texDesc;
-	D3D11_RENDER_TARGET_VIEW_DESC rtvDesc;
-	D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc;
-	D3D11_SAMPLER_DESC sampDesc;
-	D3D11_BUFFER_DESC cbDesc;
-
-	if (D3D->pBlurPS != NULL && D3D->blurTexWidth == w && D3D->blurTexHeight == h)
-		return;
-
-	/* Release old textures if size changed */
-	D3D_API_RELEASE(D3D->pBlurTex0);
-	D3D_API_RELEASE(D3D->pBlurTex1);
-	D3D_API_RELEASE(D3D->pBlurRTV0);
-	D3D_API_RELEASE(D3D->pBlurRTV1);
-	D3D_API_RELEASE(D3D->pBlurSRV0);
-	D3D_API_RELEASE(D3D->pBlurSRV1);
-
-	/* Create shaders from precompiled bytecode on first call */
-	if (D3D->pBlurVS == NULL) {
-		D3D_API_4(D3D->pDevice, CreateVertexShader,
-			g_D3D11BlurVertexShader_Main, sizeof(g_D3D11BlurVertexShader_Main), NULL, &D3D->pBlurVS);
-		D3D_API_4(D3D->pDevice, CreatePixelShader,
-			g_D3D11BlurPixelShader_Main, sizeof(g_D3D11BlurPixelShader_Main), NULL, &D3D->pBlurPS);
-	}
-
-	/* Create sampler */
-	if (D3D->pBlurSampler == NULL) {
-		memset(&sampDesc, 0, sizeof(sampDesc));
-		sampDesc.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
-		sampDesc.AddressU = D3D11_TEXTURE_ADDRESS_CLAMP;
-		sampDesc.AddressV = D3D11_TEXTURE_ADDRESS_CLAMP;
-		sampDesc.AddressW = D3D11_TEXTURE_ADDRESS_CLAMP;
-		D3D_API_2(D3D->pDevice, CreateSamplerState, &sampDesc, &D3D->pBlurSampler);
-	}
-
-	/* Create constant buffer */
-	if (D3D->pBlurCB == NULL) {
-		memset(&cbDesc, 0, sizeof(cbDesc));
-		cbDesc.ByteWidth = 32; /* 2 float2 + 1 float4 = 32 bytes */
-		cbDesc.Usage = D3D11_USAGE_DYNAMIC;
-		cbDesc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
-		cbDesc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
-		D3D_API_3(D3D->pDevice, CreateBuffer, &cbDesc, NULL, &D3D->pBlurCB);
-	}
-
-	/* Create ping-pong textures */
-	memset(&texDesc, 0, sizeof(texDesc));
-	texDesc.Width = w;
-	texDesc.Height = h;
-	texDesc.MipLevels = 1;
-	texDesc.ArraySize = 1;
-	texDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-	texDesc.SampleDesc.Count = 1;
-	texDesc.Usage = D3D11_USAGE_DEFAULT;
-	texDesc.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
-
-	D3D_API_3(D3D->pDevice, CreateTexture2D, &texDesc, NULL, &D3D->pBlurTex0);
-	D3D_API_3(D3D->pDevice, CreateTexture2D, &texDesc, NULL, &D3D->pBlurTex1);
-
-	memset(&rtvDesc, 0, sizeof(rtvDesc));
-	rtvDesc.Format = texDesc.Format;
-	rtvDesc.ViewDimension = D3D11_RTV_DIMENSION_TEXTURE2D;
-	D3D_API_3(D3D->pDevice, CreateRenderTargetView, (ID3D11Resource*)D3D->pBlurTex0, &rtvDesc, &D3D->pBlurRTV0);
-	D3D_API_3(D3D->pDevice, CreateRenderTargetView, (ID3D11Resource*)D3D->pBlurTex1, &rtvDesc, &D3D->pBlurRTV1);
-
-	memset(&srvDesc, 0, sizeof(srvDesc));
-	srvDesc.Format = texDesc.Format;
-	srvDesc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
-	srvDesc.Texture2D.MipLevels = 1;
-	D3D_API_3(D3D->pDevice, CreateShaderResourceView, (ID3D11Resource*)D3D->pBlurTex0, &srvDesc, &D3D->pBlurSRV0);
-	D3D_API_3(D3D->pDevice, CreateShaderResourceView, (ID3D11Resource*)D3D->pBlurTex1, &srvDesc, &D3D->pBlurSRV1);
-
-	D3D->blurTexWidth = w;
-	D3D->blurTexHeight = h;
-}
-
-static void D3Dnvg__renderBlur(void* uptr, float x, float y, float w, float h, float radius, float devicePixelRatio)
-{
-	struct D3DNVGcontext* D3D = (struct D3DNVGcontext*)uptr;
-	ID3D11RenderTargetView* origRTV = NULL;
-	ID3D11DepthStencilView* origDSV = NULL;
-	ID3D11Texture2D* backbufferTex = NULL;
-	ID3D11Resource* rtvResource = NULL;
-	D3D11_TEXTURE2D_DESC bbDesc;
-	D3D11_BOX srcBox;
-	D3D11_MAPPED_SUBRESOURCE mapped;
-	D3D11_VIEWPORT vp;
-	D3D11_VIEWPORT origVP;
-	UINT numVPs = 1;
-	ID3D11ShaderResourceView* nullSRV = NULL;
-	float cbData[8];
-	int ix, iy, iw, ih;
-
-
-
-	/* Get current render target and viewport */
-	D3D_API_2(D3D->pDeviceContext, RSGetViewports, &numVPs, &origVP);
-	D3D_API_3(D3D->pDeviceContext, OMGetRenderTargets, 1, &origRTV, &origDSV);
-	if (origRTV == NULL) return;
-
-	D3D_API_1(origRTV, GetResource, &rtvResource);
-	backbufferTex = (ID3D11Texture2D*)rtvResource;
-	D3D_API_1(backbufferTex, GetDesc, &bbDesc);
-
-	ix = (int)(x * devicePixelRatio); iy = (int)(y * devicePixelRatio);
-	iw = (int)(w * devicePixelRatio + 0.5f); ih = (int)(h * devicePixelRatio + 0.5f);
-	radius *= devicePixelRatio;
-	if (ix < 0) { iw += ix; ix = 0; }
-	if (iy < 0) { ih += iy; iy = 0; }
-	if (ix + iw > (int)bbDesc.Width) iw = (int)bbDesc.Width - ix;
-	if (iy + ih > (int)bbDesc.Height) ih = (int)bbDesc.Height - iy;
-	if (iw <= 0 || ih <= 0) {
-		D3D_API_RELEASE(origRTV);
-		D3D_API_RELEASE(origDSV);
-		D3D_API_RELEASE(rtvResource);
-		return;
-	}
-
-	D3Dnvg__blurEnsureResources(D3D, iw, ih);
-	/* Copy region from backbuffer to blur tex 0 */
-	srcBox.left = ix; srcBox.top = iy; srcBox.front = 0;
-	srcBox.right = ix + iw; srcBox.bottom = iy + ih; srcBox.back = 1;
-	D3D_API_8(D3D->pDeviceContext, CopySubresourceRegion,
-		(ID3D11Resource*)D3D->pBlurTex0, 0, 0, 0, 0, rtvResource, 0, &srcBox);
-
-	/* Setup viewport */
-	vp.TopLeftX = 0; vp.TopLeftY = 0;
-	vp.Width = (float)iw; vp.Height = (float)ih;
-	vp.MinDepth = 0.0f; vp.MaxDepth = 1.0f;
-	D3D_API_2(D3D->pDeviceContext, RSSetViewports, 1, &vp);
-
-	/* Disable blend, depth/stencil, and culling for blur passes */
-	D3D_API_3(D3D->pDeviceContext, OMSetBlendState, NULL, NULL, 0xFFFFFFFF);
-	D3D_API_2(D3D->pDeviceContext, OMSetDepthStencilState, NULL, 0);
-	D3D_API_1(D3D->pDeviceContext, RSSetState, D3D->pRSNoCull);
-
-	/* Set shaders */
-	D3D_API_3(D3D->pDeviceContext, VSSetShader, D3D->pBlurVS, NULL, 0);
-	D3D_API_1(D3D->pDeviceContext, IASetInputLayout, NULL);
-	D3D_API_1(D3D->pDeviceContext, IASetPrimitiveTopology, D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-
-	/* Horizontal pass: tex0 -> tex1 */
-	cbData[0] = 1.0f; cbData[1] = 0.0f;
-	cbData[2] = (float)iw; cbData[3] = (float)ih;
-	cbData[4] = radius; cbData[5] = 0; cbData[6] = 0; cbData[7] = 0;
-
-	D3D_API_5(D3D->pDeviceContext, Map, (ID3D11Resource*)D3D->pBlurCB, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
-	memcpy(mapped.pData, cbData, 32);
-	D3D_API_2(D3D->pDeviceContext, Unmap, (ID3D11Resource*)D3D->pBlurCB, 0);
-
-	D3D_API_3(D3D->pDeviceContext, PSSetShader, D3D->pBlurPS, NULL, 0);
-	D3D_API_3(D3D->pDeviceContext, PSSetConstantBuffers, 0, 1, &D3D->pBlurCB);
-	D3D_API_3(D3D->pDeviceContext, PSSetSamplers, 0, 1, &D3D->pBlurSampler);
-	D3D_API_3(D3D->pDeviceContext, PSSetShaderResources, 0, 1, &D3D->pBlurSRV0);
-	D3D_API_3(D3D->pDeviceContext, OMSetRenderTargets, 1, &D3D->pBlurRTV1, NULL);
-
-	D3D_API_2(D3D->pDeviceContext, Draw, 3, 0);
-
-	/* Vertical pass: tex1 -> backbuffer */
-	/* First unbind tex1 as RT by setting backbuffer as RT */
-	D3D_API_3(D3D->pDeviceContext, PSSetShaderResources, 0, 1, &nullSRV);
-	D3D_API_3(D3D->pDeviceContext, OMSetRenderTargets, 1, &origRTV, NULL);
-
-	/* Set viewport to blur region position on backbuffer */
-	vp.TopLeftX = (float)ix; vp.TopLeftY = (float)iy;
-	vp.Width = (float)iw; vp.Height = (float)ih;
-	D3D_API_2(D3D->pDeviceContext, RSSetViewports, 1, &vp);
-
-	/* Update CB for vertical direction */
-	cbData[0] = 0.0f; cbData[1] = 1.0f;
-	D3D_API_5(D3D->pDeviceContext, Map, (ID3D11Resource*)D3D->pBlurCB, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
-	memcpy(mapped.pData, cbData, 32);
-	D3D_API_2(D3D->pDeviceContext, Unmap, (ID3D11Resource*)D3D->pBlurCB, 0);
-
-	/* Now safe to bind tex1 as SRV */
-	D3D_API_3(D3D->pDeviceContext, PSSetShaderResources, 0, 1, &D3D->pBlurSRV1);
-
-	D3D_API_2(D3D->pDeviceContext, Draw, 3, 0);
-
-	/* Cleanup */
-	D3D_API_3(D3D->pDeviceContext, PSSetShaderResources, 0, 1, &nullSRV);
-
-	/* Restore original render target and viewport */
-	D3D_API_3(D3D->pDeviceContext, OMSetRenderTargets, 1, &origRTV, origDSV);
-	D3D_API_2(D3D->pDeviceContext, RSSetViewports, 1, &origVP);
-
-	D3D_API_RELEASE(origRTV);
-	D3D_API_RELEASE(origDSV);
-	D3D_API_RELEASE(rtvResource);
-}
-
 static void D3Dnvg__renderDelete(void* uptr)
 {
 	struct D3DNVGcontext* D3D = (struct D3DNVGcontext*)uptr;
@@ -1698,18 +1490,6 @@ static void D3Dnvg__renderDelete(void* uptr)
 	D3D_API_RELEASE(D3D->pDepthStencilFill);
 	D3D_API_RELEASE(D3D->pDepthStencilDefault);
 
-	// Blur resources
-	D3D_API_RELEASE(D3D->pBlurPS);
-	D3D_API_RELEASE(D3D->pBlurVS);
-	D3D_API_RELEASE(D3D->pBlurTex0);
-	D3D_API_RELEASE(D3D->pBlurTex1);
-	D3D_API_RELEASE(D3D->pBlurRTV0);
-	D3D_API_RELEASE(D3D->pBlurRTV1);
-	D3D_API_RELEASE(D3D->pBlurSRV0);
-	D3D_API_RELEASE(D3D->pBlurSRV1);
-	D3D_API_RELEASE(D3D->pBlurSampler);
-	D3D_API_RELEASE(D3D->pBlurCB);
-
 	// We took a reference to this
 	// Don't delete the device though.
 	D3D_API_RELEASE(D3D->pDeviceContext);
@@ -1750,7 +1530,6 @@ struct NVGcontext* nvgCreateD3D11(ID3D11Device* pDevice, int flags)
 	params.renderFill = D3Dnvg__renderFill;
 	params.renderStroke = D3Dnvg__renderStroke;
 	params.renderTriangles = D3Dnvg__renderTriangles;
-	params.renderBlur = D3Dnvg__renderBlur;
 	params.renderDelete = D3Dnvg__renderDelete;
 	params.userPtr = D3D;
 	params.edgeAntiAlias = flags & NVG_ANTIALIAS ? 1 : 0;
