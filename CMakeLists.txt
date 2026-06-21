@@ -95,17 +95,21 @@ if(NANOVG_BUILD_EXAMPLES)
             endif()
         endif()
 
-        add_executable(example_vulkan_min WIN32 examples/example_vulkan_min_no_glfw.c ${NANOVG_EXAMPLE_COMMON})
-        target_include_directories(example_vulkan_min PRIVATE
-            ${CMAKE_CURRENT_SOURCE_DIR}/include/nanovg
-            ${CMAKE_CURRENT_SOURCE_DIR}/third_party
-            ${CMAKE_CURRENT_SOURCE_DIR}/examples
-            ${CMAKE_CURRENT_SOURCE_DIR}/shaders/vulkan
-        )
-        target_compile_definitions(example_vulkan_min PRIVATE NANOVG_VULKAN)
-        target_link_libraries(example_vulkan_min nanovg Vulkan::Vulkan)
-        if(UNIX)
-            target_link_libraries(example_vulkan_min m)
+        if(NOT APPLE)
+            add_executable(example_vulkan_min WIN32 examples/example_vulkan_min_no_glfw.c ${NANOVG_EXAMPLE_COMMON})
+            target_include_directories(example_vulkan_min PRIVATE
+                ${CMAKE_CURRENT_SOURCE_DIR}/include/nanovg
+                ${CMAKE_CURRENT_SOURCE_DIR}/third_party
+                ${CMAKE_CURRENT_SOURCE_DIR}/examples
+                ${CMAKE_CURRENT_SOURCE_DIR}/shaders/vulkan
+            )
+            target_compile_definitions(example_vulkan_min PRIVATE NANOVG_VULKAN)
+            target_link_libraries(example_vulkan_min nanovg Vulkan::Vulkan)
+            if(UNIX)
+                find_package(X11 REQUIRED)
+                target_compile_definitions(example_vulkan_min PRIVATE VK_USE_PLATFORM_XCB_KHR)
+                target_link_libraries(example_vulkan_min m X11::xcb)
+            endif()
         endif()
     endif()
 endif()
