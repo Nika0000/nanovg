@@ -88,12 +88,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Install Vulkan SDK
-        uses: humbletim/setup-vulkan-sdk@v1.2.0
-        with:
-          vulkan-query-version: 1.3.290.0
-          vulkan-components: Glslang
-          vulkan-use-cache: true
+      - name: Install glslang
+        run: sudo apt-get update && sudo apt-get install -y glslang-tools
 
       - name: Compile Vulkan shaders
         working-directory: shaders/vulkan
@@ -123,7 +119,7 @@ jobs:
           rm -f fill.vert.spv fill.frag.spv
 
       - name: Upload compiled shaders
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: vulkan-shaders
           path: |
@@ -142,21 +138,21 @@ jobs:
 
       - name: Download D3D11 shaders
         if: needs.recompile-d3d11.result == 'success'
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: d3d11-shaders
           path: shaders/d3d11
 
       - name: Download Metal shaders
         if: needs.recompile-metal.result == 'success'
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: metal-shaders
           path: shaders/metal
 
       - name: Download Vulkan shaders
         if: needs.recompile-vulkan.result == 'success'
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: vulkan-shaders
           path: shaders/vulkan

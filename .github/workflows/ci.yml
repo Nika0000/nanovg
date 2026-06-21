@@ -52,9 +52,9 @@ jobs:
           echo "VULKAN_SDK=$sdkPath" >> $env:GITHUB_ENV
           echo "$sdkPath\Bin" >> $env:GITHUB_PATH
 
-      - name: Install GLFW
+      - name: Install GLFW and GLEW
         run: |
-          vcpkg install glfw3:x64-windows
+          vcpkg install glfw3:x64-windows glew:x64-windows
           echo "CMAKE_TOOLCHAIN_FILE=$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" >> $env:GITHUB_ENV
 
       - name: Configure with examples
