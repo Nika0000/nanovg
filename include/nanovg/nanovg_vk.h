@@ -1,4 +1,5 @@
-#pragma once
+#ifndef NANOVG_VULKAN_H
+#define NANOVG_VULKAN_H
 
 #include <assert.h>
 #include <math.h>
@@ -31,6 +32,7 @@ typedef struct VKNVGCreateInfo {
   VkDevice device;
   VkRenderPass renderpass;
   VkCommandBuffer *cmdBuffer;
+  VkCommandBuffer uploadCmdBuffer;
   uint32_t swapchainImageCount;
   uint32_t *currentFrame;
   const VkAllocationCallbacks *allocator; // Allocator for vulkan. can be null
@@ -39,10 +41,14 @@ typedef struct VKNVGCreateInfo {
 #ifdef __cplusplus
 extern "C" {
 #endif
-static void nvgDeleteVk(NVGcontext *ctx);
+
+struct NVGcontext *nvgCreateVk(VKNVGCreateInfo createInfo, int flags, VkQueue queue);
+void nvgDeleteVk(NVGcontext *ctx);
 
 #ifdef __cplusplus
 }
+#endif
+
 #endif
 
 #ifdef NANOVG_VULKAN_IMPLEMENTATION
@@ -593,10 +599,10 @@ static VkPipelineColorBlendAttachmentState vknvg_compositOperationToColorBlendAt
   state.alphaBlendOp = VK_BLEND_OP_ADD;
   state.colorWriteMask = vknvg_colorWriteMask(pipelineKey);
 
-  state.srcColorBlendFactor = vknvg_NVGblendFactorToVkBlendFactor(pipelineKey->compositOperation.srcRGB);
-  state.srcAlphaBlendFactor = vknvg_NVGblendFactorToVkBlendFactor(pipelineKey->compositOperation.srcAlpha);
-  state.dstColorBlendFactor = vknvg_NVGblendFactorToVkBlendFactor(pipelineKey->compositOperation.dstRGB);
-  state.dstAlphaBlendFactor = vknvg_NVGblendFactorToVkBlendFactor(pipelineKey->compositOperation.dstAlpha);
+  state.srcColorBlendFactor = vknvg_NVGblendFactorToVkBlendFactor((NVGblendFactor)pipelineKey->compositOperation.srcRGB);
+  state.srcAlphaBlendFactor = vknvg_NVGblendFactorToVkBlendFactor((NVGblendFactor)pipelineKey->compositOperation.srcAlpha);
+  state.dstColorBlendFactor = vknvg_NVGblendFactorToVkBlendFactor((NVGblendFactor)pipelineKey->compositOperation.dstRGB);
+  state.dstAlphaBlendFactor = vknvg_NVGblendFactorToVkBlendFactor((NVGblendFactor)pipelineKey->compositOperation.dstAlpha);
 
   if (state.srcColorBlendFactor == VK_BLEND_FACTOR_MAX_ENUM || state.srcAlphaBlendFactor == VK_BLEND_FACTOR_MAX_ENUM || state.dstColorBlendFactor == VK_BLEND_FACTOR_MAX_ENUM || state.dstAlphaBlendFactor == VK_BLEND_FACTOR_MAX_ENUM) {
     // default blend if failed convert
@@ -1008,7 +1014,7 @@ static int vknvg_maxVertCountList(const NVGpath *paths, int npaths) {
 
 static VKNVGcall *vknvg_allocCall(VKNVGcontext *vk) {
   VKNVGcall *ret = nullptr;
-  if (vk->ncalls + 1 > vk->ccalls) {
+  if (vk->ncalls + 1 > (uint32_t)vk->ccalls) {
     VKNVGcall *calls;
     int ccalls = vknvg_maxi(vk->ncalls + 1, 128) + vk->ccalls / 2; // 1.5x Overallocate
     calls = (VKNVGcall *) realloc(vk->calls, sizeof(VKNVGcall) * ccalls);
@@ -1274,7 +1280,6 @@ static void vknvg_stroke(VKNVGcontext *vk, VKNVGcall *call, uint32_t descriptor_
     vkCmdBindDescriptorSets(cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vk->pipelineLayout, 0, 2, sets, 0, nullptr);
     // Draw Strokes
 
-    VkDeviceSize offsets[] = {0};
     for (int i = 0; i < npaths; ++i) {
       vkCmdDraw(cmdBuffer, paths[i].strokeCount, 1, paths[i].strokeOffset, 0);
     }
@@ -1329,7 +1334,6 @@ static int vknvg_renderCreate(void *uptr) {
 
   vk->fillVertShader = vknvg_createShaderModule(device, fillVertShader, sizeof(fillVertShader), allocator);
   vk->fillFragShader = vknvg_createShaderModule(device, fillFragShader, sizeof(fillFragShader), allocator);
-  VkDeviceSize align = vk->gpuProperties.limits.minUniformBufferOffsetAlignment;
 
   vk->fragSize = (int) sizeof(VKNVGfragUniforms); // std430 does not need padding
 
@@ -1488,8 +1492,7 @@ static int vknvg_renderCreateTexture(void *uptr, int type, int w, int h, int ima
     free(generated_texture);
   }
 
-  uint32_t currentFrame = *vk->createInfo.currentFrame;
-  vknvg_InitTexture(vk->createInfo.cmdBuffer[currentFrame], vk->queue, tex);
+  vknvg_InitTexture(vk->createInfo.uploadCmdBuffer, vk->queue, tex);
 
   return vknvg_textureId(vk, tex);
 }
@@ -1573,7 +1576,7 @@ static void vknvg_renderFlush(void *uptr) {
   }
 
   if (vk->ncalls > 0) {
-    int i;
+    uint32_t i;
     const VkFlags flags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
     vknvg_UpdateBuffer(device, allocator, &vk->vertexBuffer[currentFrame], memoryProperties, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, flags, vk->verts, vk->nverts * sizeof(vk->verts[0]));
     vknvg_UpdateBuffer(device, allocator, &vk->fragUniformBuffer[currentFrame], memoryProperties, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, flags, vk->uniforms, vk->nuniforms * vk->fragSize);
@@ -1884,7 +1887,7 @@ static void vknvg_renderDelete(void *uptr) {
     }
   }
 
-  for (int i = 0; i < vk->createInfo.swapchainImageCount; i++) {
+  for (uint32_t i = 0; i < vk->createInfo.swapchainImageCount; i++) {
     vknvg_destroyBuffer(device, allocator, &vk->vertexBuffer[i]);
     vknvg_destroyBuffer(device, allocator, &vk->fragUniformBuffer[i]);
   }
@@ -1918,7 +1921,7 @@ static void vknvg_renderDelete(void *uptr) {
   free(vk);
 }
 
-static NVGcontext *nvgCreateVk(VKNVGCreateInfo createInfo, int flags, VkQueue queue) {
+struct NVGcontext *nvgCreateVk(VKNVGCreateInfo createInfo, int flags, VkQueue queue) {
 
   NVGparams params;
   NVGcontext *ctx = nullptr;
@@ -1983,7 +1986,7 @@ error:
   return nullptr;
 }
 
-static void nvgDeleteVk(NVGcontext *ctx) { nvgDeleteInternal(ctx); }
+void nvgDeleteVk(NVGcontext *ctx) { nvgDeleteInternal(ctx); }
 
 static void vknvg_setDynamicState(VKNVGcontext *vk, VkCommandBuffer cmd, const VKNVGCreatePipelineKey *pipelineKey) {
   if (vk->ext.dynamicState) {
