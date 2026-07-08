@@ -610,10 +610,10 @@ static VkPipelineColorBlendAttachmentState vknvg_compositOperationToColorBlendAt
 	state.alphaBlendOp   = VK_BLEND_OP_ADD;
 	state.colorWriteMask = vknvg_colorWriteMask(pipelineKey);
 
-	state.srcColorBlendFactor = vknvg_NVGblendFactorToVkBlendFactor((NVGblendFactor) pipelineKey->compositOperation.srcRGB);
-	state.srcAlphaBlendFactor = vknvg_NVGblendFactorToVkBlendFactor((NVGblendFactor) pipelineKey->compositOperation.srcAlpha);
-	state.dstColorBlendFactor = vknvg_NVGblendFactorToVkBlendFactor((NVGblendFactor) pipelineKey->compositOperation.dstRGB);
-	state.dstAlphaBlendFactor = vknvg_NVGblendFactorToVkBlendFactor((NVGblendFactor) pipelineKey->compositOperation.dstAlpha);
+	state.srcColorBlendFactor = vknvg_NVGblendFactorToVkBlendFactor((enum NVGblendFactor) pipelineKey->compositOperation.srcRGB);
+	state.srcAlphaBlendFactor = vknvg_NVGblendFactorToVkBlendFactor((enum NVGblendFactor) pipelineKey->compositOperation.srcAlpha);
+	state.dstColorBlendFactor = vknvg_NVGblendFactorToVkBlendFactor((enum NVGblendFactor) pipelineKey->compositOperation.dstRGB);
+	state.dstAlphaBlendFactor = vknvg_NVGblendFactorToVkBlendFactor((enum NVGblendFactor) pipelineKey->compositOperation.dstAlpha);
 
 	if (state.srcColorBlendFactor == VK_BLEND_FACTOR_MAX_ENUM || state.srcAlphaBlendFactor == VK_BLEND_FACTOR_MAX_ENUM || state.dstColorBlendFactor == VK_BLEND_FACTOR_MAX_ENUM || state.dstAlphaBlendFactor == VK_BLEND_FACTOR_MAX_ENUM) {
 		// default blend if failed convert
