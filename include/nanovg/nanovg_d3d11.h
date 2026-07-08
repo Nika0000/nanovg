@@ -779,7 +779,7 @@ static struct NVGcolor D3Dnvg__premulColor(struct NVGcolor c) {
 	return c;
 }
 
-static int D3Dnvg__convertPaint(struct D3DNVGcontext* D3D, struct D3DNVGfragUniforms* frag, float width, float fringe, float strokeThr) {
+static int D3Dnvg__convertPaint(struct D3DNVGcontext* D3D, struct D3DNVGfragUniforms* frag, struct NVGpaint* paint, struct NVGscissor* scissor, float width, float fringe, float strokeThr) {
 	struct D3DNVGtexture* tex = NULL;
 	float invxform[6], paintMat[9], scissorMat[9];
 
