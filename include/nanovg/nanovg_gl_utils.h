@@ -38,19 +38,18 @@ void nvgluDeleteFramebuffer(NVGLUframebuffer* fb);
 
 #if defined(NANOVG_GL3) || defined(NANOVG_GLES2) || defined(NANOVG_GLES3)
 // FBO is core in OpenGL 3>.
-#	define NANOVG_FBO_VALID 1
+#define NANOVG_FBO_VALID 1
 #elif defined(NANOVG_GL2)
 // On OS X including glext defines FBO on GL2 too.
-#	ifdef __APPLE__
-#		include <OpenGL/glext.h>
-#		define NANOVG_FBO_VALID 1
-#	endif
+#ifdef __APPLE__
+#include <OpenGL/glext.h>
+#define NANOVG_FBO_VALID 1
+#endif
 #endif
 
 static GLint defaultFBO = -1;
 
-NVGLUframebuffer* nvgluCreateFramebuffer(NVGcontext* ctx, int w, int h, int imageFlags)
-{
+NVGLUframebuffer* nvgluCreateFramebuffer(NVGcontext* ctx, int w, int h, int imageFlags) {
 #ifdef NANOVG_FBO_VALID
 	GLint defaultFBO;
 	GLint defaultRBO;
@@ -59,7 +58,7 @@ NVGLUframebuffer* nvgluCreateFramebuffer(NVGcontext* ctx, int w, int h, int imag
 	glGetIntegerv(GL_FRAMEBUFFER_BINDING, &defaultFBO);
 	glGetIntegerv(GL_RENDERBUFFER_BINDING, &defaultRBO);
 
-	fb = (NVGLUframebuffer*)malloc(sizeof(NVGLUframebuffer));
+	fb = (NVGLUframebuffer*) malloc(sizeof(NVGLUframebuffer));
 	if (fb == NULL) goto error;
 	memset(fb, 0, sizeof(NVGLUframebuffer));
 
@@ -120,8 +119,7 @@ error:
 #endif
 }
 
-void nvgluBindFramebuffer(NVGLUframebuffer* fb)
-{
+void nvgluBindFramebuffer(NVGLUframebuffer* fb) {
 #ifdef NANOVG_FBO_VALID
 	if (defaultFBO == -1) glGetIntegerv(GL_FRAMEBUFFER_BINDING, &defaultFBO);
 	glBindFramebuffer(GL_FRAMEBUFFER, fb != NULL ? fb->fbo : defaultFBO);
@@ -130,8 +128,7 @@ void nvgluBindFramebuffer(NVGLUframebuffer* fb)
 #endif
 }
 
-void nvgluDeleteFramebuffer(NVGLUframebuffer* fb)
-{
+void nvgluDeleteFramebuffer(NVGLUframebuffer* fb) {
 #ifdef NANOVG_FBO_VALID
 	if (fb == NULL) return;
 	if (fb->fbo != 0)
@@ -140,11 +137,11 @@ void nvgluDeleteFramebuffer(NVGLUframebuffer* fb)
 		glDeleteRenderbuffers(1, &fb->rbo);
 	if (fb->image >= 0)
 		nvgDeleteImage(fb->ctx, fb->image);
-	fb->ctx = NULL;
-	fb->fbo = 0;
-	fb->rbo = 0;
+	fb->ctx     = NULL;
+	fb->fbo     = 0;
+	fb->rbo     = 0;
 	fb->texture = 0;
-	fb->image = -1;
+	fb->image   = -1;
 	free(fb);
 #else
 	NVG_NOTUSED(fb);

@@ -25,5 +25,4 @@ const int PS4_SHADER_VERT_LENGTH = 1073;
 extern const unsigned char PS4_SHADER_FRAG[];
 const int PS4_SHADER_FRAG_LENGTH = 5066;
 
-
 #endif // NANOVG_PS4_H
