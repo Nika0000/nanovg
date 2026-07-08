@@ -23,13 +23,15 @@ typedef struct VkNvgExt {
 typedef struct VKNVGCreateInfo {
 	VkPhysicalDevice gpu;
 	VkDevice device;
-	VkRenderPass renderpass;
 	VkCommandBuffer* cmdBuffer;
 	VkCommandBuffer uploadCmdBuffer;
 	uint32_t swapchainImageCount;
 	uint32_t* currentFrame;
 	const VkAllocationCallbacks* allocator; // Allocator for vulkan. can be null
 	VkNvgExt ext;
+
+	VkFormat colorFormat;
+	VkFormat depthStencilFormat;
 } VKNVGCreateInfo;
 #ifdef __cplusplus
 extern "C" {
@@ -52,6 +54,7 @@ void nvgDeleteVk(NVGcontext* ctx);
 #include <string.h>
 
 #include "nanovg.h"
+
 // optional define to switch to VK_PRIMITIVE_TOPOLOGY_TRIANGLE_FAN
 // by default used VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST
 // #define USE_TOPOLOGY_TRIANGLE_FAN
@@ -209,6 +212,11 @@ typedef struct VKNVGcontext {
 	VkDescriptorSet* ssboDescriptorSet;
 
 	uint32_t cdescPool;
+
+	uint32_t flushIndex;
+	uint32_t maxFlushesPerFrame;
+	uint32_t pendingMaxFlushes;
+	uint32_t frameSlot;
 
 	unsigned char* uniforms;
 	int cuniforms;
@@ -766,7 +774,6 @@ static VkFlags vknvg_cullMode(VKNVGCreatePipelineKey* pipelinekey) {
 static VKNVGPipeline* vknvg_createPipeline(VKNVGcontext* vk, VKNVGCreatePipelineKey* pipelinekey) {
 	VkDevice device                        = vk->createInfo.device;
 	VkPipelineLayout pipelineLayout        = vk->pipelineLayout;
-	VkRenderPass renderpass                = vk->createInfo.renderpass;
 	const VkAllocationCallbacks* allocator = vk->createInfo.allocator;
 
 	VkShaderModule vert_shader = vk->fillVertShader;
@@ -891,19 +898,26 @@ static VKNVGPipeline* vknvg_createPipeline(VKNVGcontext* vk, VKNVGCreatePipeline
 	shaderStages[1].pName               = "main";
 	shaderStages[1].pSpecializationInfo = &specializationInfo;
 
+	VkPipelineRenderingCreateInfo renderingCreateInfo = {VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO};
+	renderingCreateInfo.colorAttachmentCount          = 1;
+	renderingCreateInfo.pColorAttachmentFormats       = &vk->createInfo.colorFormat;
+	renderingCreateInfo.depthAttachmentFormat         = vk->createInfo.depthStencilFormat;
+	renderingCreateInfo.stencilAttachmentFormat       = vk->createInfo.depthStencilFormat;
+
 	VkGraphicsPipelineCreateInfo pipelineCreateInfo = {VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO};
-	pipelineCreateInfo.layout                       = pipelineLayout;
-	pipelineCreateInfo.stageCount                   = 2;
-	pipelineCreateInfo.pStages                      = shaderStages;
-	pipelineCreateInfo.pVertexInputState            = &vi;
-	pipelineCreateInfo.pInputAssemblyState          = &ia;
-	pipelineCreateInfo.pRasterizationState          = &rs;
-	pipelineCreateInfo.pColorBlendState             = &cb;
-	pipelineCreateInfo.pMultisampleState            = &ms;
-	pipelineCreateInfo.pViewportState               = &vp;
-	pipelineCreateInfo.pDepthStencilState           = &ds;
-	pipelineCreateInfo.renderPass                   = renderpass;
-	pipelineCreateInfo.pDynamicState                = &dynamicState;
+
+	pipelineCreateInfo.pNext               = &renderingCreateInfo;
+	pipelineCreateInfo.layout              = pipelineLayout;
+	pipelineCreateInfo.stageCount          = 2;
+	pipelineCreateInfo.pStages             = shaderStages;
+	pipelineCreateInfo.pVertexInputState   = &vi;
+	pipelineCreateInfo.pInputAssemblyState = &ia;
+	pipelineCreateInfo.pRasterizationState = &rs;
+	pipelineCreateInfo.pColorBlendState    = &cb;
+	pipelineCreateInfo.pMultisampleState   = &ms;
+	pipelineCreateInfo.pViewportState      = &vp;
+	pipelineCreateInfo.pDepthStencilState  = &ds;
+	pipelineCreateInfo.pDynamicState       = &dynamicState;
 
 	VkPipeline pipeline;
 	NVGVK_CHECK_RESULT(vkCreateGraphicsPipelines(device, 0, 1, &pipelineCreateInfo, allocator, &pipeline));
@@ -1146,7 +1160,7 @@ static void vknvg_fill(VKNVGcontext* vk, VKNVGcall* call, uint32_t descriptor_of
 	vknvg_bindPipeline(vk, cmdBuffer, &pipelineKey);
 	vknvg_setDynamicState(vk, cmdBuffer, &pipelineKey);
 	vknvg_setUniforms(vk, vk->uniformDescriptorSet[descriptor_offset], call->uniformOffset, call->image);
-	VkDescriptorSet sets[2] = {vk->ssboDescriptorSet[currentFrame], vk->uniformDescriptorSet[descriptor_offset]};
+	VkDescriptorSet sets[2] = {vk->ssboDescriptorSet[vk->frameSlot], vk->uniformDescriptorSet[descriptor_offset]};
 	vkCmdBindDescriptorSets(cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vk->pipelineLayout, 0, 2, sets, 0, nullptr);
 
 	for (int i = 0; i < npaths; i++) {
@@ -1204,7 +1218,7 @@ static void vknvg_convexFill(VKNVGcontext* vk, VKNVGcall* call, uint32_t descrip
 	vknvg_bindPipeline(vk, cmdBuffer, &pipelineKey);
 	vknvg_setDynamicState(vk, cmdBuffer, &pipelineKey);
 	vknvg_setUniforms(vk, vk->uniformDescriptorSet[descriptor_offset], call->uniformOffset, call->image);
-	const VkDescriptorSet sets[2] = {vk->ssboDescriptorSet[currentFrame], vk->uniformDescriptorSet[descriptor_offset]};
+	const VkDescriptorSet sets[2] = {vk->ssboDescriptorSet[vk->frameSlot], vk->uniformDescriptorSet[descriptor_offset]};
 	vkCmdBindDescriptorSets(cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vk->pipelineLayout, 0, 2, sets, 0, nullptr);
 
 	for (int i = 0; i < npaths; ++i) {
@@ -1244,7 +1258,7 @@ static void vknvg_stroke(VKNVGcontext* vk, VKNVGcall* call, uint32_t descriptor_
 		vknvg_bindPipeline(vk, cmdBuffer, &pipelineKey);
 		vknvg_setDynamicState(vk, cmdBuffer, &pipelineKey);
 		vknvg_setUniforms(vk, vk->uniformDescriptorSet2[descriptor_offset], call->uniformOffset + vk->fragSize, call->image);
-		VkDescriptorSet sets[2] = {vk->ssboDescriptorSet[currentFrame], vk->uniformDescriptorSet2[descriptor_offset]};
+		VkDescriptorSet sets[2] = {vk->ssboDescriptorSet[vk->frameSlot], vk->uniformDescriptorSet2[descriptor_offset]};
 		vkCmdBindDescriptorSets(cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vk->pipelineLayout, 0, 2, sets, 0, nullptr);
 
 		for (int i = 0; i < npaths; ++i) {
@@ -1287,7 +1301,7 @@ static void vknvg_stroke(VKNVGcontext* vk, VKNVGcall* call, uint32_t descriptor_
 		vknvg_bindPipeline(vk, cmdBuffer, &pipelineKey);
 		vknvg_setDynamicState(vk, cmdBuffer, &pipelineKey);
 		vknvg_setUniforms(vk, vk->uniformDescriptorSet[descriptor_offset], call->uniformOffset, call->image);
-		VkDescriptorSet sets[2] = {vk->ssboDescriptorSet[currentFrame], vk->uniformDescriptorSet[descriptor_offset]};
+		VkDescriptorSet sets[2] = {vk->ssboDescriptorSet[vk->frameSlot], vk->uniformDescriptorSet[descriptor_offset]};
 		vkCmdBindDescriptorSets(cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vk->pipelineLayout, 0, 2, sets, 0, nullptr);
 		// Draw Strokes
 
@@ -1316,7 +1330,7 @@ static void vknvg_triangles(VKNVGcontext* vk, VKNVGcall* call, uint32_t descript
 	vknvg_bindPipeline(vk, cmdBuffer, &pipelineKey);
 	vknvg_setDynamicState(vk, cmdBuffer, &pipelineKey);
 	vknvg_setUniforms(vk, vk->uniformDescriptorSet[descriptor_offset], call->uniformOffset, call->image);
-	const VkDescriptorSet sets[2] = {vk->ssboDescriptorSet[currentFrame], vk->uniformDescriptorSet[descriptor_offset]};
+	const VkDescriptorSet sets[2] = {vk->ssboDescriptorSet[vk->frameSlot], vk->uniformDescriptorSet[descriptor_offset]};
 	vkCmdBindDescriptorSets(cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vk->pipelineLayout, 0, 2, sets, 0, nullptr);
 
 	vkCmdDraw(cmdBuffer, call->triangleCount, 1, call->triangleOffset, 0);
@@ -1554,6 +1568,37 @@ static void vknvg_renderViewport(void* uptr, float width, float height, float de
 #endif
 	vk->vertexConstants.viewSize[0] = width;
 	vk->vertexConstants.viewSize[1] = height;
+
+	vk->flushIndex = 0;
+
+	// If a previous frame needed more flushes than we had provisioned (any feature that flushes
+	// mid-frame), grow capacity here where it is safe. Grow the per-slot buffer arrays in place
+	// (realloc preserves entries in-flight frames may still reference; the tail is zeroed so
+	// renderFlush lazily allocates it). Force the descriptor pool/sets to be rebuilt at the new size
+	// on the next flush by clearing cdescPool (same rebuild path the ncalls-growth already uses).
+	if (vk->pendingMaxFlushes > vk->maxFlushesPerFrame) {
+		const uint32_t frames   = vk->createInfo.swapchainImageCount;
+		const uint32_t oldSlots = frames * vk->maxFlushesPerFrame;
+		const uint32_t newSlots = frames * vk->pendingMaxFlushes;
+		if (vk->vertexBuffer != nullptr) {
+			VKNVGBuffer* nv = (VKNVGBuffer*) realloc(vk->vertexBuffer, newSlots * sizeof(VKNVGBuffer));
+			VKNVGBuffer* nf = (VKNVGBuffer*) realloc(vk->fragUniformBuffer, newSlots * sizeof(VKNVGBuffer));
+			if (nv != nullptr && nf != nullptr) {
+				memset(nv + oldSlots, 0, (newSlots - oldSlots) * sizeof(VKNVGBuffer));
+				memset(nf + oldSlots, 0, (newSlots - oldSlots) * sizeof(VKNVGBuffer));
+				vk->vertexBuffer       = nv;
+				vk->fragUniformBuffer  = nf;
+				vk->maxFlushesPerFrame = vk->pendingMaxFlushes;
+				vk->cdescPool          = 0; // rebuild descriptor pool/sets at the new slot count on next flush
+			} else {
+				// realloc failed: keep the old (possibly larger) valid pointer, drop the growth request.
+				if (nv != nullptr) vk->vertexBuffer = nv;
+				if (nf != nullptr) vk->fragUniformBuffer = nf;
+			}
+		} else {
+			vk->maxFlushesPerFrame = vk->pendingMaxFlushes; // not allocated yet. renderFlush uses new size
+		}
+	}
 }
 static void vknvg_renderCancel(void* uptr) {
 #ifdef __cplusplus
@@ -1580,19 +1625,38 @@ static void vknvg_renderFlush(void* uptr) {
 	const VkAllocationCallbacks* allocator                  = vk->createInfo.allocator;
 
 	if (vk->vertexBuffer == nullptr) {
-		const uint32_t maxFramesInFlight = vk->createInfo.swapchainImageCount;
-		vk->vertexBuffer                 = (VKNVGBuffer*) calloc(maxFramesInFlight, sizeof(VKNVGBuffer));
-		vk->fragUniformBuffer            = (VKNVGBuffer*) calloc(maxFramesInFlight, sizeof(VKNVGBuffer));
+		// Provision 2 flush slots per frame-in-flight by default: a normal frame flushes once, but any
+		// feature that flushes mid-frame produces two. Each flush needs its own buffers so a later
+		// flush cannot overwrite data an earlier flush's already-recorded draws still reference. See
+		// the flushIndex comment in VKNVGcontext.
+		if (vk->maxFlushesPerFrame < 2)
+			vk->maxFlushesPerFrame = 2;
+		const uint32_t slots  = vk->createInfo.swapchainImageCount * vk->maxFlushesPerFrame;
+		vk->vertexBuffer      = (VKNVGBuffer*) calloc(slots, sizeof(VKNVGBuffer));
+		vk->fragUniformBuffer = (VKNVGBuffer*) calloc(slots, sizeof(VKNVGBuffer));
 	}
+
+	// Slot for this flush. If a frame ever needs more flushes than provisioned (multiple blur regions),
+	// clamp this flush to the last slot (a rare, transient one-frame glitch) and request a larger
+	// capacity to be applied at the next frame boundary (vknvg_renderViewport), where growth is safe.
+	uint32_t fi = vk->flushIndex;
+	if (fi >= vk->maxFlushesPerFrame) {
+		if (fi + 1 > vk->pendingMaxFlushes)
+			vk->pendingMaxFlushes = fi + 1;
+		fi = vk->maxFlushesPerFrame - 1;
+	}
+	const uint32_t frameSlot = currentFrame * vk->maxFlushesPerFrame + fi;
+	const uint32_t descSlots = vk->createInfo.swapchainImageCount * vk->maxFlushesPerFrame;
+	vk->frameSlot            = frameSlot;
 
 	if (vk->ncalls > 0) {
 		uint32_t i;
 		const VkFlags flags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
-		vknvg_UpdateBuffer(device, allocator, &vk->vertexBuffer[currentFrame], memoryProperties, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, flags, vk->verts, vk->nverts * sizeof(vk->verts[0]));
-		vknvg_UpdateBuffer(device, allocator, &vk->fragUniformBuffer[currentFrame], memoryProperties, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, flags, vk->uniforms, vk->nuniforms * vk->fragSize);
+		vknvg_UpdateBuffer(device, allocator, &vk->vertexBuffer[frameSlot], memoryProperties, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, flags, vk->verts, vk->nverts * sizeof(vk->verts[0]));
+		vknvg_UpdateBuffer(device, allocator, &vk->fragUniformBuffer[frameSlot], memoryProperties, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, flags, vk->uniforms, vk->nuniforms * vk->fragSize);
 
 		const VkDeviceSize offsets[1] = {0};
-		vkCmdBindVertexBuffers(vk->createInfo.cmdBuffer[currentFrame], 0, 1, &vk->vertexBuffer[currentFrame].buffer, offsets);
+		vkCmdBindVertexBuffers(vk->createInfo.cmdBuffer[currentFrame], 0, 1, &vk->vertexBuffer[frameSlot].buffer, offsets);
 
 		vk->currentPipeline = nullptr;
 
@@ -1600,8 +1664,8 @@ static void vknvg_renderFlush(void* uptr) {
 			vkDestroyDescriptorPool(device, vk->descPool, allocator);
 
 			uint32_t pool_totals = 0;
-			pool_totals += vk->ncalls * vk->createInfo.swapchainImageCount; // uniform texture descriptors
-			pool_totals += vk->createInfo.swapchainImageCount;              // ssbo descriptors
+			pool_totals += vk->ncalls * descSlots; // uniform texture descriptors
+			pool_totals += descSlots;              // ssbo descriptors
 			vk->descPool = vknvg_createDescriptorPool(device, pool_totals, allocator);
 
 			free(vk->uniformDescriptorSet);
@@ -1609,22 +1673,22 @@ static void vknvg_renderFlush(void* uptr) {
 			free(vk->ssboDescriptorSet);
 
 #ifdef __cplusplus
-			vk->uniformDescriptorSet  = static_cast<VkDescriptorSet*>(calloc(vk->ncalls * vk->createInfo.swapchainImageCount, sizeof(VkDescriptorSet)));
-			vk->uniformDescriptorSet2 = static_cast<VkDescriptorSet*>(calloc(vk->ncalls * vk->createInfo.swapchainImageCount, sizeof(VkDescriptorSet)));
-			vk->ssboDescriptorSet     = static_cast<VkDescriptorSet*>(calloc(vk->createInfo.swapchainImageCount, sizeof(VkDescriptorSet)));
+			vk->uniformDescriptorSet  = static_cast<VkDescriptorSet*>(calloc(vk->ncalls * descSlots, sizeof(VkDescriptorSet)));
+			vk->uniformDescriptorSet2 = static_cast<VkDescriptorSet*>(calloc(vk->ncalls * descSlots, sizeof(VkDescriptorSet)));
+			vk->ssboDescriptorSet     = static_cast<VkDescriptorSet*>(calloc(descSlots, sizeof(VkDescriptorSet)));
 #else
-			vk->uniformDescriptorSet  = (VkDescriptorSet*) calloc(vk->ncalls * vk->createInfo.swapchainImageCount, sizeof(VkDescriptorSet));
-			vk->uniformDescriptorSet2 = (VkDescriptorSet*) calloc(vk->ncalls * vk->createInfo.swapchainImageCount, sizeof(VkDescriptorSet));
-			vk->ssboDescriptorSet     = (VkDescriptorSet*) calloc(vk->createInfo.swapchainImageCount, sizeof(VkDescriptorSet));
+			vk->uniformDescriptorSet  = (VkDescriptorSet*) calloc(vk->ncalls * descSlots, sizeof(VkDescriptorSet));
+			vk->uniformDescriptorSet2 = (VkDescriptorSet*) calloc(vk->ncalls * descSlots, sizeof(VkDescriptorSet));
+			vk->ssboDescriptorSet     = (VkDescriptorSet*) calloc(descSlots, sizeof(VkDescriptorSet));
 #endif
 
 			VkDescriptorSetAllocateInfo alloc_info_0 = {VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO, nullptr, vk->descPool, 1, &vk->descLayout[0]};
-			for (i = 0; i < vk->createInfo.swapchainImageCount; i++) {
+			for (i = 0; i < descSlots; i++) {
 				NVGVK_CHECK_RESULT(vkAllocateDescriptorSets(device, &alloc_info_0, &vk->ssboDescriptorSet[i]))
 			}
 
 			VkDescriptorSetAllocateInfo alloc_info_1 = {VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO, nullptr, vk->descPool, 1, &vk->descLayout[1]};
-			for (i = 0; i < vk->ncalls * vk->createInfo.swapchainImageCount; i++) {
+			for (i = 0; i < vk->ncalls * descSlots; i++) {
 				NVGVK_CHECK_RESULT(vkAllocateDescriptorSets(device, &alloc_info_1, &vk->uniformDescriptorSet[i]))
 				NVGVK_CHECK_RESULT(vkAllocateDescriptorSets(device, &alloc_info_1, &vk->uniformDescriptorSet2[i]))
 			}
@@ -1637,19 +1701,19 @@ static void vknvg_renderFlush(void* uptr) {
 #else
 		VkDescriptorBufferInfo buffer_info = {0};
 #endif
-		buffer_info.buffer = vk->fragUniformBuffer[currentFrame].buffer;
+		buffer_info.buffer = vk->fragUniformBuffer[frameSlot].buffer;
 		buffer_info.offset = 0;
 		buffer_info.range  = vk->nuniforms * vk->fragSize;
 
 		VkWriteDescriptorSet write_frag_data = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
-		write_frag_data.dstSet               = vk->ssboDescriptorSet[currentFrame];
+		write_frag_data.dstSet               = vk->ssboDescriptorSet[frameSlot];
 		write_frag_data.descriptorCount      = 1;
 		write_frag_data.descriptorType       = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
 		write_frag_data.pBufferInfo          = &buffer_info;
 		write_frag_data.dstBinding           = 0;
 		vkUpdateDescriptorSets(device, 1, &write_frag_data, 0, nullptr);
 
-		const uint32_t descriptor_offset = vk->cdescPool * currentFrame; // ensure descriptor sets dont clash
+		const uint32_t descriptor_offset = vk->cdescPool * frameSlot; // ensure descriptor sets dont clash
 		for (i = 0; i < vk->ncalls; i++) {
 			VKNVGcall* call = &vk->calls[i];
 			if (call->type == VKNVG_FILL) {
@@ -1664,6 +1728,7 @@ static void vknvg_renderFlush(void* uptr) {
 		}
 	}
 	// Reset calls
+	vk->flushIndex++;
 	vk->nverts    = 0;
 	vk->npaths    = 0;
 	vk->ncalls    = 0;
@@ -1897,9 +1962,12 @@ static void vknvg_renderDelete(void* uptr) {
 		}
 	}
 
-	for (uint32_t i = 0; i < vk->createInfo.swapchainImageCount; i++) {
-		vknvg_destroyBuffer(device, allocator, &vk->vertexBuffer[i]);
-		vknvg_destroyBuffer(device, allocator, &vk->fragUniformBuffer[i]);
+	{
+		const uint32_t slots = vk->createInfo.swapchainImageCount * (vk->maxFlushesPerFrame ? vk->maxFlushesPerFrame : 1);
+		for (uint32_t i = 0; i < slots; i++) {
+			vknvg_destroyBuffer(device, allocator, &vk->vertexBuffer[i]);
+			vknvg_destroyBuffer(device, allocator, &vk->fragUniformBuffer[i]);
+		}
 	}
 
 	vkDestroyShaderModule(device, vk->fillVertShader, allocator);

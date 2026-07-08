@@ -87,7 +87,15 @@ VulkanDevice *createVulkanDevice(VkPhysicalDevice gpu, VkSurfaceKHR surface, VkN
   VkExtensionProperties *extensions = calloc(count, sizeof(VkExtensionProperties));
   vkEnumerateDeviceExtensionProperties(gpu, NULL, &count, extensions);
 
-  physicalDeviceFeatures2.pNext = NULL;
+  VkPhysicalDeviceDynamicRenderingFeatures dynamicRenderingFeatures = {
+    VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_FEATURES};
+  VkPhysicalDeviceSynchronization2Features synchronization2Features = {
+    VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SYNCHRONIZATION_2_FEATURES};
+  dynamicRenderingFeatures.dynamicRendering = VK_TRUE;
+  synchronization2Features.synchronization2 = VK_TRUE;
+  dynamicRenderingFeatures.pNext = &synchronization2Features;
+
+  physicalDeviceFeatures2.pNext = &dynamicRenderingFeatures;
   extendedDynamicStateFeatures.pNext = NULL;
   extendedDynamicState3Features.pNext = NULL;
 
@@ -95,7 +103,8 @@ VulkanDevice *createVulkanDevice(VkPhysicalDevice gpu, VkSurfaceKHR surface, VkN
     if (strcmp(VK_EXT_EXTENDED_DYNAMIC_STATE_EXTENSION_NAME, extensions[i].extensionName) == 0) {
       enableDynamicState = true;
       enabledExtensionCount++;
-      physicalDeviceFeatures2.pNext = &extendedDynamicStateFeatures;
+      // Chain the extended-dynamic-state features after the dynamic-rendering/sync2 features.
+      synchronization2Features.pNext = &extendedDynamicStateFeatures;
       ext->dynamicState = extendedDynamicStateFeatures.extendedDynamicState;
     }
     if (strcmp(VK_EXT_EXTENDED_DYNAMIC_STATE_3_EXTENSION_NAME, extensions[i].extensionName) == 0) {
@@ -168,15 +177,12 @@ typedef struct FrameBuffers {
   VkSwapchainKHR swap_chain;
   SwapchainBuffers *swap_chain_buffers;
   uint32_t swapchain_image_count;
-  VkFramebuffer *framebuffers;
 
   uint32_t current_buffer;
   uint32_t current_frame;
   uint64_t num_swaps;
 
   VkExtent2D buffer_size;
-
-  VkRenderPass render_pass;
 
   VkFormat format;
   DepthBuffer depth;
@@ -204,7 +210,7 @@ static VkInstance createVkInstance(bool enable_debug_layer) {
   app_info.applicationVersion = 1;
   app_info.pEngineName = "NanoVG";
   app_info.engineVersion = 1;
-  app_info.apiVersion = VK_API_VERSION_1_0;
+  app_info.apiVersion = VK_API_VERSION_1_3;
 
   static const char *other_extensions[] = {
     VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME,
@@ -554,57 +560,6 @@ SwapchainBuffers createSwapchainBuffers(const VulkanDevice *device, VkFormat for
   return buffer;
 }
 
-VkRenderPass createRenderPass(VkDevice device, VkFormat color_format, VkFormat depth_format) {
-  VkAttachmentDescription attachments[2] = {{0}};
-  attachments[0].format = color_format;
-  attachments[0].samples = VK_SAMPLE_COUNT_1_BIT;
-  attachments[0].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-  attachments[0].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-  attachments[0].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-  attachments[0].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-  attachments[0].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-  attachments[0].finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-
-  attachments[1].format = depth_format;
-  attachments[1].samples = VK_SAMPLE_COUNT_1_BIT;
-  attachments[1].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-  attachments[1].storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-  attachments[1].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-  attachments[1].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-  attachments[1].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-  attachments[1].finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-
-  VkAttachmentReference color_reference = {0};
-  color_reference.attachment = 0;
-  color_reference.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-
-  VkAttachmentReference depth_reference = {0};
-  depth_reference.attachment = 1;
-  depth_reference.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-
-  VkSubpassDescription subpass = {0};
-  subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-  subpass.flags = 0;
-  subpass.inputAttachmentCount = 0;
-  subpass.pInputAttachments = NULL;
-  subpass.colorAttachmentCount = 1;
-  subpass.pColorAttachments = &color_reference;
-  subpass.pResolveAttachments = NULL;
-  subpass.pDepthStencilAttachment = &depth_reference;
-  subpass.preserveAttachmentCount = 0;
-  subpass.pPreserveAttachments = NULL;
-
-  VkRenderPassCreateInfo rp_info = {VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO};
-  rp_info.attachmentCount = 2;
-  rp_info.pAttachments = attachments;
-  rp_info.subpassCount = 1;
-  rp_info.pSubpasses = &subpass;
-  VkRenderPass render_pass;
-  VkResult res;
-  res = vkCreateRenderPass(device, &rp_info, NULL, &render_pass);
-  assert(res == VK_SUCCESS);
-  return render_pass;
-}
 FrameBuffers createFrameBuffers(const VulkanDevice *device, VkSurfaceKHR surface, VkQueue queue, int winWidth,
                                 int winHeight, VkSwapchainKHR oldSwapchain) {
 
@@ -663,8 +618,6 @@ FrameBuffers createFrameBuffers(const VulkanDevice *device, VkSurfaceKHR surface
 
   DepthBuffer depth = createDepthBuffer(device, buffer_size.width, buffer_size.height);
 
-  VkRenderPass render_pass = createRenderPass(device->device, colorFormat, depth.format);
-
   VkPresentModeKHR swapchainPresentMode = VK_PRESENT_MODE_FIFO_KHR;
 
   uint32_t presentModeCount;
@@ -707,7 +660,7 @@ FrameBuffers createFrameBuffers(const VulkanDevice *device, VkSurfaceKHR surface
   swapchainInfo.imageFormat = colorFormat;
   swapchainInfo.imageColorSpace = colorSpace;
   swapchainInfo.imageExtent = buffer_size;
-  swapchainInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+  swapchainInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
   swapchainInfo.preTransform = preTransform;
   swapchainInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
   swapchainInfo.imageArrayLayers = 1;
@@ -741,26 +694,7 @@ FrameBuffers createFrameBuffers(const VulkanDevice *device, VkSurfaceKHR surface
   }
   free(swapchainImages);
 
-  VkImageView attachments[2];
-  attachments[1] = depth.view;
-
-  VkFramebufferCreateInfo fb_info = {VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO};
-  fb_info.renderPass = render_pass;
-  fb_info.attachmentCount = 2;
-  fb_info.pAttachments = attachments;
-  fb_info.width = buffer_size.width;
-  fb_info.height = buffer_size.height;
-  fb_info.layers = 1;
   uint32_t i;
-
-  VkFramebuffer *framebuffers = (VkFramebuffer *) malloc(swapchain_image_count * sizeof(VkFramebuffer));
-  assert(framebuffers);
-
-  for (i = 0; i < swapchain_image_count; i++) {
-    attachments[0] = swap_chain_buffers[i].view;
-    res = vkCreateFramebuffer(device->device, &fb_info, NULL, &framebuffers[i]);
-    assert(res == VK_SUCCESS);
-  }
 
   vkEndCommandBuffer(setup_cmd_buffer[0]);
   VkSubmitInfo submitInfo = {VK_STRUCTURE_TYPE_SUBMIT_INFO};
@@ -777,11 +711,9 @@ FrameBuffers createFrameBuffers(const VulkanDevice *device, VkSurfaceKHR surface
   buffer.swap_chain = swap_chain;
   buffer.swap_chain_buffers = swap_chain_buffers;
   buffer.swapchain_image_count = swapchain_image_count;
-  buffer.framebuffers = framebuffers;
   buffer.current_buffer = 0;
   buffer.format = colorFormat;
   buffer.buffer_size = buffer_size;
-  buffer.render_pass = render_pass;
   buffer.depth = depth;
   buffer.present_complete_semaphore = (VkSemaphore *) calloc(swapchain_image_count, sizeof(VkSemaphore));
   buffer.render_complete_semaphore = (VkSemaphore *) calloc(swapchain_image_count, sizeof(VkSemaphore));
@@ -822,17 +754,14 @@ void destroyFrameBuffers(const VulkanDevice *device, FrameBuffers *buffer, VkQue
 
   for (uint32_t i = 0; i < buffer->swapchain_image_count; ++i) {
     vkDestroyImageView(device->device, buffer->swap_chain_buffers[i].view, 0);
-    vkDestroyFramebuffer(device->device, buffer->framebuffers[i], 0);
   }
 
   vkDestroyImageView(device->device, buffer->depth.view, 0);
   vkDestroyImage(device->device, buffer->depth.image, 0);
   vkFreeMemory(device->device, buffer->depth.mem, 0);
 
-  vkDestroyRenderPass(device->device, buffer->render_pass, 0);
   vkDestroySwapchainKHR(device->device, buffer->swap_chain, 0);
 
-  free(buffer->framebuffers);
   free(buffer->swap_chain_buffers);
   free(buffer->present_complete_semaphore);
   free(buffer->render_complete_semaphore);

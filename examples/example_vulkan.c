@@ -62,46 +62,82 @@ void prepareFrame(VkDevice device, VkCommandBuffer cmd_buffer, FrameBuffers *fb)
   const VkCommandBufferBeginInfo cmd_buf_info = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
   vkBeginCommandBuffer(cmd_buffer, &cmd_buf_info);
 
-  VkClearValue clear_values[2];
-  clear_values[0].color.float32[0] = 0.3f;
-  clear_values[0].color.float32[1] = 0.3f;
-  clear_values[0].color.float32[2] = 0.32f;
-  clear_values[0].color.float32[3] = 1.0f;
-  clear_values[1].depthStencil.depth = 1.0f;
-  clear_values[1].depthStencil.stencil = 0;
+  VkRect2D render_area = {{0, 0}, {fb->buffer_size.width, fb->buffer_size.height}};
 
-  VkRenderPassBeginInfo rp_begin;
-  rp_begin.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-  rp_begin.pNext = NULL;
-  rp_begin.renderPass = fb->render_pass;
-  rp_begin.framebuffer = fb->framebuffers[fb->current_buffer];
-  rp_begin.renderArea.offset.x = 0;
-  rp_begin.renderArea.offset.y = 0;
-  rp_begin.renderArea.extent.width = fb->buffer_size.width;
-  rp_begin.renderArea.extent.height = fb->buffer_size.height;
-  rp_begin.clearValueCount = 2;
-  rp_begin.pClearValues = clear_values;
+  // Dynamic rendering: transition the swapchain image UNDEFINED -> COLOR_ATTACHMENT_OPTIMAL (its
+  // contents are cleared) and the depth image UNDEFINED -> DEPTH_STENCIL_ATTACHMENT_OPTIMAL.
+  VkImageMemoryBarrier2 barriers[2] = {{0}, {0}};
+  barriers[0].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
+  barriers[0].srcStageMask = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT;
+  barriers[0].dstStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+  barriers[0].dstAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
+  barriers[0].oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+  barriers[0].newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+  barriers[0].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+  barriers[0].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+  barriers[0].image = fb->swap_chain_buffers[fb->current_buffer].image;
+  barriers[0].subresourceRange = (VkImageSubresourceRange){VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
 
-  vkCmdBeginRenderPass(cmd_buffer, &rp_begin, VK_SUBPASS_CONTENTS_INLINE);
+  barriers[1].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
+  barriers[1].srcStageMask = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT;
+  barriers[1].dstStageMask = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT;
+  barriers[1].dstAccessMask = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+  barriers[1].oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+  barriers[1].newLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+  barriers[1].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+  barriers[1].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+  barriers[1].image = fb->depth.image;
+  barriers[1].subresourceRange = (VkImageSubresourceRange){VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT, 0, 1, 0, 1};
+
+  VkDependencyInfo dep_info = {VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+  dep_info.imageMemoryBarrierCount = 2;
+  dep_info.pImageMemoryBarriers = barriers;
+  vkCmdPipelineBarrier2(cmd_buffer, &dep_info);
+
+  VkRenderingAttachmentInfo color_attachment = {VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
+  color_attachment.imageView = fb->swap_chain_buffers[fb->current_buffer].view;
+  color_attachment.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+  color_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+  color_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+  color_attachment.clearValue.color.float32[0] = 0.3f;
+  color_attachment.clearValue.color.float32[1] = 0.3f;
+  color_attachment.clearValue.color.float32[2] = 0.32f;
+  color_attachment.clearValue.color.float32[3] = 1.0f;
+
+  VkRenderingAttachmentInfo depth_attachment = {VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
+  depth_attachment.imageView = fb->depth.view;
+  depth_attachment.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+  depth_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+  depth_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+  depth_attachment.clearValue.depthStencil.depth = 1.0f;
+  depth_attachment.clearValue.depthStencil.stencil = 0;
+
+  VkRenderingInfo rendering_info = {VK_STRUCTURE_TYPE_RENDERING_INFO};
+  rendering_info.renderArea = render_area;
+  rendering_info.layerCount = 1;
+  rendering_info.colorAttachmentCount = 1;
+  rendering_info.pColorAttachments = &color_attachment;
+  rendering_info.pDepthAttachment = &depth_attachment;
+  rendering_info.pStencilAttachment = &depth_attachment;
+  vkCmdBeginRendering(cmd_buffer, &rendering_info);
 
   VkViewport viewport;
   viewport.width = (float) fb->buffer_size.width;
   viewport.height = (float) fb->buffer_size.height;
   viewport.minDepth = 0.0f;
   viewport.maxDepth = 1.0f;
-  viewport.x = (float) rp_begin.renderArea.offset.x;
-  viewport.y = (float) rp_begin.renderArea.offset.y;
+  viewport.x = (float) render_area.offset.x;
+  viewport.y = (float) render_area.offset.y;
   vkCmdSetViewport(cmd_buffer, 0, 1, &viewport);
 
-  VkRect2D scissor = rp_begin.renderArea;
-  vkCmdSetScissor(cmd_buffer, 0, 1, &scissor);
+  vkCmdSetScissor(cmd_buffer, 0, 1, &render_area);
 }
 
 void submitFrame(VkDevice device, VkQueue graphicsQueue, VkQueue presentQueue, VkCommandBuffer cmd_buffer,
                  FrameBuffers *fb) {
   VkResult res;
 
-  vkCmdEndRenderPass(cmd_buffer);
+  vkCmdEndRendering(cmd_buffer);
 
   VkImageMemoryBarrier image_barrier = {
     .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
@@ -286,11 +322,11 @@ int main() {
   VKNVGCreateInfo create_info = {0};
   create_info.device = device->device;
   create_info.gpu = device->gpu;
-  create_info.renderpass = fb.render_pass;
   create_info.cmdBuffer = cmd_buffer;
   create_info.swapchainImageCount = fb.swapchain_image_count;
   create_info.currentFrame = &fb.current_frame;
-  create_info.commandPool = device->commandPool;
+  create_info.colorFormat = fb.format;
+  create_info.depthStencilFormat = fb.depth.format;
 
   /**
    * Either explicitly set the following to false or query your hardware and enable these items as necessary.
