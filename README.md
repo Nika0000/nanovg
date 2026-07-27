@@ -1,17 +1,19 @@
+NanoVG
+==========
+
+NanoVG is small antialiased vector graphics rendering library for OpenGL. It has lean API modeled after HTML5 canvas API. It is aimed to be a practical and fun toolset for building scalable user interfaces and visualizations.
+
 > [!WARNING]
 > This repository collects NanoVG ports and related implementations.
 >
 > For the official upstream NanoVG source, prefer:
 > [memononen/nanovg](https://github.com/memononen/nanovg)
 
-NanoVG
-==========
+## Playground
 
-NanoVG is small antialiased vector graphics rendering library for OpenGL. It has lean API modeled after HTML5 canvas API. It is aimed to be a practical and fun toolset for building scalable user interfaces and visualizations.
+[![playground](https://github.com/user-attachments/assets/c0675fd2-e816-4ef7-9090-7e4805ba79e0)](https://nika0000.github.io/nanovg/)
 
-## Screenshot
-
-![screenshot of some text rendered witht the sample program](/examples/screenshot-01.png?raw=true)
+Browser [playground](https://nika0000.github.io/nanovg/) for this fork, JS mirrors the C API 1:1. Build/run locally: [`playground/README.md`](/playground/README.md).
 
 Usage
 =====
@@ -99,6 +101,27 @@ The data for the whole frame is buffered and flushed in `nvgEndFrame()`. The fol
     glBindTexture(GL_TEXTURE_2D, tex);
     glUniformBlockBinding(... , GLNVG_FRAG_BINDING);
 ```
+
+## Backends
+
+Same pattern as above, just swap the header/define/create call:
+
+| Backend | Header | Define | Create call |
+|---|---|---|---|
+| OpenGL 2 | [`nanovg_gl.h`](/include/nanovg/nanovg_gl.h) | `NANOVG_GL2_IMPLEMENTATION` | `nvgCreateGL2()` |
+| OpenGL 3 core | [`nanovg_gl.h`](/include/nanovg/nanovg_gl.h) | `NANOVG_GL3_IMPLEMENTATION` | `nvgCreateGL3()` |
+| OpenGL ES 2 | [`nanovg_gl.h`](/include/nanovg/nanovg_gl.h) | `NANOVG_GLES2_IMPLEMENTATION` | `nvgCreateGLES2()` |
+| OpenGL ES 3 | [`nanovg_gl.h`](/include/nanovg/nanovg_gl.h) | `NANOVG_GLES3_IMPLEMENTATION` | `nvgCreateGLES3()` |
+| Direct3D 11 | [`nanovg_d3d11.h`](/include/nanovg/backends/nanovg_d3d11.h) | `NANOVG_D3D11_IMPLEMENTATION` | `nvgCreateD3D11()` |
+| Vulkan | [`nanovg_vk.h`](/include/nanovg/backends/nanovg_vk.h) | `NANOVG_VULKAN_IMPLEMENTATION` | `nvgCreateVk()` |
+| Metal | [`nanovg_mtl.h`](/include/nanovg/backend/nanovg_mtl.h) | Obj-C, `src/metal/nanovg_mtl.m` | `nvgCreateMTL()` |
+| deko3d (Switch) | [`nanovg_dk.h`](/include/nanovg/backends/nanovg_dk.h) | `src/deko3d/*.cpp` | `nvgCreateDk()` |
+| PS4 | [`nanovg_ps4.h`](/include/nanovg/backends/nanovg_ps4.h) | `src/ps4/nanovg_ps4.c` | `nvgCreatePS4()` |
+| WebGPU | planned | — | — |
+
+Vulkan needs `dynamicRendering` + `synchronization2` device features and
+`vkCmdBeginRendering`/`vkCmdEndRendering` around the frame (see `VKNVGCreateInfo`
+in the header). Everything else about drawing is identical across backends.
 
 ## API Reference
 
