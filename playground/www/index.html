@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NanoVG Playground</title>
+<meta name="description" content="Live-code NanoVG in the browser. The real C library compiled to WebAssembly, rendering through WebGL2, with a draw-call inspector.">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-name">NanoVG</span>
+    <span class="brand-sub">playground</span>
+  </div>
+
+  <label class="field">
+    <span class="field-label">Example</span>
+    <select id="snippet-menu" aria-label="Example snippet"></select>
+  </label>
+
+  <div class="topbar-spacer"></div>
+
+  <span class="badge" title="src/nanovg.c compiled to WebAssembly, GLES3 backend on WebGL2">wasm · WebGL2</span>
+  <a id="gh-star" class="gh-star" href="https://github.com/Nika0000/nanovg" target="_blank" rel="noopener" title="View on GitHub">
+    <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path fill="currentColor" fill-rule="evenodd" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.02 1.93-.02 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8Z"></path></svg>
+    <span>Star</span>
+    <span id="gh-star-count" class="gh-star-count"></span>
+  </a>
+  <button id="run" class="btn btn-primary" data-state="running" title="Pause">
+    <svg class="icon-pause" viewBox="0 0 16 16" aria-hidden="true"><rect fill="currentColor" x="4" y="2.5" width="3" height="11"></rect><rect fill="currentColor" x="9" y="2.5" width="3" height="11"></rect></svg>
+    <svg class="icon-play" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M4 2.5v11l9-5.5-9-5.5z"></path></svg>
+    <span id="run-label">Pause</span>
+  </button>
+  <button id="share" class="btn">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+    <span>Share</span>
+  </button>
+  <button id="help" class="btn btn-icon" aria-expanded="false" aria-controls="help-panel" title="About">?</button>
+</header>
+
+<main id="layout" class="layout">
+  <section class="pane pane-editor">
+    <div class="pane-head">
+      <span id="snippet-blurb" class="blurb"></span>
+    </div>
+    <div id="editor"></div>
+  </section>
+
+  <div id="split" class="split" role="separator" aria-orientation="vertical"
+       aria-label="Resize editor and preview panes"
+       aria-valuemin="20" aria-valuemax="80" aria-valuenow="50" tabindex="0"></div>
+
+  <section class="pane pane-preview">
+    <div id="stage" class="stage">
+      <canvas id="canvas"></canvas>
+    </div>
+
+    <aside id="inspector" class="inspector">
+      <div class="inspector-head">
+        <button id="inspector-toggle" class="collapse-btn" aria-expanded="true" aria-controls="stats" title="Collapse">
+          <svg class="chevron" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M4 6l4 4 4-4z"></path></svg>
+        </button>
+        <h2>Frame inspector</h2>
+        <span class="hint">what the GL backend actually submitted</span>
+      </div>
+      <div id="stats" class="stats"></div>
+    </aside>
+  </section>
+</main>
+
+<section id="pane-bottom" class="pane pane-bottom">
+  <div class="tabs">
+    <button id="console-toggle" class="collapse-btn" aria-expanded="true" aria-controls="console" title="Collapse">
+      <svg class="chevron" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M4 6l4 4 4-4z"></path></svg>
+    </button>
+    <span class="tab is-active">Console</span>
+    <div class="tabs-spacer"></div>
+    <span id="status" class="status" data-kind="pending">booting…</span>
+    <span id="fps" class="fps">– fps</span>
+  </div>
+  <div id="console" class="console" role="log" aria-live="polite"></div>
+</section>
+
+<aside id="help-panel" class="help" hidden>
+  <div class="help-inner">
+    <h2>How this works</h2>
+    <p>
+      This is the real NanoVG — <code>src/nanovg.c</code> plus the GLES3 backend
+      from <code>nanovg_gl.h</code> — compiled to WebAssembly and drawing into a
+      WebGL2 canvas. The <code>nvg</code> object mirrors the C API one call at a
+      time, so anything you write here translates directly to C.
+    </p>
+
+    <h3>Sketch contract</h3>
+    <p>Your code is the body of a function called once per frame, between
+      <code>nvgBeginFrame()</code> and <code>nvgEndFrame()</code>. In scope:</p>
+    <ul class="help-args">
+      <li><code>nvg</code> — the API surface (see the reference below)</li>
+      <li><code>t</code>, <code>dt</code> — seconds since compile, and since last frame</li>
+      <li><code>frame</code> — frame counter</li>
+      <li><code>w</code>, <code>h</code> — canvas size in CSS pixels</li>
+      <li><code>mouse</code> — <code>{x, y, down, inside}</code></li>
+      <li><code>cache</code> — persists across frames, reset on recompile</li>
+    </ul>
+    <p>
+      Fonts <code>sans</code>, <code>bold</code>, <code>light</code> and
+      <code>icons</code> are preloaded; <code>cache.img</code> holds a sample image.
+    </p>
+
+    <h3>Editor</h3>
+    <ul class="help-args">
+      <li><code>nvg.</code> opens completion with the header's own doc comment
+        and the C signature each call maps to.</li>
+      <li><code>Ctrl</code>/<code>Cmd</code> + <code>Space</code> asks for it
+        anywhere; <code>Esc</code> dismisses it.</li>
+      <li>Matching is fuzzy — <code>rndrct</code> finds
+        <code>roundedRect</code>, and the C name finds the JS one.</li>
+      <li><code>Enter</code> or <code>Tab</code> accepts. Inside a call, a strip
+        above the caret shows the parameter list with the current one in bold.</li>
+      <li><code>Ctrl</code>/<code>Cmd</code> + <code>Enter</code> runs; editing
+        recompiles on its own after a short pause.</li>
+    </ul>
+
+    <h3>Differences from C</h3>
+    <ul class="help-args">
+      <li>No <code>ctx</code> first argument — there is one context.</li>
+      <li>Colors are plain arrays; <code>nvg.hex('#7aa2f7')</code> is a shortcut.</li>
+      <li>Paints are opaque handles, used exactly like the C values.</li>
+      <li>Out-param functions return objects: <code>nvg.textBounds(x, y, s)</code>
+        gives <code>{advance, xmin, ymin, xmax, ymax, width, height}</code>.</li>
+      <li>Enum names drop the <code>NVG_</code> prefix (both spellings work).</li>
+      <li>The optional <code>end</code> substring pointer is omitted.</li>
+    </ul>
+
+    <h3>Reading the inspector</h3>
+    <p>
+      NanoVG records a frame's work into its own buffers and submits it all in
+      one flush at <code>nvgEndFrame()</code>. <b>Draw calls</b> is how many
+      passes that flush needed — one per <code>fill</code>,
+      <code>stroke</code> or <code>text</code>, since nanovg does not merge
+      shapes. The breakdown names what each one does: a convex path is a single
+      pass, a concave one is stencil-then-cover, text is triangles from the glyph
+      atlas. <b>Vertices</b> is the geometry the tessellator produced, which is
+      where curve-heavy paths actually get expensive. The <em>What a frame
+      costs</em> example makes both readable.
+    </p>
+
+    <h3>API reference</h3>
+    <input id="api-filter" class="api-filter" type="search" placeholder="Filter functions…" aria-label="Filter API functions">
+    <div id="api-list" class="api-list"></div>
+
+    <p class="help-foot">
+      NanoVG is by Mikko Mononen (zlib licence). This playground builds from a
+      fork carrying extra backend ports — D3D11, Metal, Vulkan, deko3d, PS4 —
+      none of which run in a browser; what you see here is the OpenGL ES 3 path.
+    </p>
+  </div>
+</aside>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>

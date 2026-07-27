@@ -1,0 +1,58 @@
+name: Playground
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: 3.1.64
+          actions-cache-folder: emsdk-cache
+
+      - name: Check generated bindings are current
+        run: |
+          python3 playground/tools/gen_bindings.py
+          git diff --exit-code -- playground/src/nanovg_web_gen.inc \
+                                  playground/www/nvg_gen.js \
+                                  playground/www/nvg_api.json \
+            || { echo "::error::Generated bindings are stale. Run playground/tools/gen_bindings.py and commit the result."; exit 1; }
+
+      - name: Configure
+        run: emcmake cmake -B build-web -DNANOVG_BUILD_PLAYGROUND=ON -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build-web
+
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: build-web/playground/site
+
+  deploy:
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    permissions:
+      pages: write
+      id-token: write
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@v4
