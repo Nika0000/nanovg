@@ -1049,6 +1049,10 @@ enum MNVGTarget mnvgTarget()
     }
 #if TARGET_OS_OSX
     _metalLayer.opaque = NO;
+    if (@available(macOS 14.0, *))
+    {
+        _metalLayer.displaySyncEnabled = NO;
+    }
 #endif // TARGET_OS_OSX
 
     // Loads shaders from pre-compiled metal library..
