@@ -492,7 +492,7 @@ NVGcontext* nvgCreateMTL(void* metalLayer, int flags)
     params.renderStroke         = mtlnvg__renderStroke;
     params.renderTriangles      = mtlnvg__renderTriangles;
     params.renderDelete         = mtlnvg__renderDelete;
-    params.userPtr              = (__bridge_retained void*)mtl;
+    params.userPtr              = (void*)CFBridgingRetain(mtl);
     params.edgeAntiAlias        = flags & NVG_ANTIALIAS ? 1 : 0;
 
     mtl.flags = flags;
@@ -1683,6 +1683,7 @@ error:
                       scissor:(NVGscissor*)scissor
                        fringe:(float)fringe
                   strokeWidth:(float)strokeWidth
+                    lineStyle:(int)lineStyle
                         paths:(const NVGpath*)paths
                        npaths:(int)npaths
 {
