@@ -22,6 +22,7 @@ EMSCRIPTEN_KEEPALIVE void nvgw_fillColor(float color_r, float color_g, float col
 EMSCRIPTEN_KEEPALIVE void nvgw_fillPaint(int paint) { nvgFillPaint(g_ctx, nvgw__paint(paint)); }
 EMSCRIPTEN_KEEPALIVE void nvgw_miterLimit(float limit) { nvgMiterLimit(g_ctx, limit); }
 EMSCRIPTEN_KEEPALIVE void nvgw_strokeWidth(float width) { nvgStrokeWidth(g_ctx, width); }
+EMSCRIPTEN_KEEPALIVE void nvgw_lineStyle(int lineStyle) { nvgLineStyle(g_ctx, lineStyle); }
 EMSCRIPTEN_KEEPALIVE void nvgw_lineCap(int cap) { nvgLineCap(g_ctx, cap); }
 EMSCRIPTEN_KEEPALIVE void nvgw_lineJoin(int join) { nvgLineJoin(g_ctx, join); }
 EMSCRIPTEN_KEEPALIVE void nvgw_globalAlpha(float alpha) { nvgGlobalAlpha(g_ctx, alpha); }

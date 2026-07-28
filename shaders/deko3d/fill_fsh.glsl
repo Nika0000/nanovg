@@ -14,12 +14,14 @@ layout(std140, binding = 0) uniform frag {
     float feather;
     float strokeMult;
     float strokeThr;
+    int lineStyle;
     int texType;
     int type;
 };
 
 layout(location = 0) in vec2 ftcoord;
 layout(location = 1) in vec2 fpos;
+layout(location = 2) in vec2 uv;
 layout(location = 0) out vec4 outColor;
 
 float sdroundrect(vec2 pt, vec2 ext, float rad) {
@@ -35,10 +37,44 @@ float scissorMask(vec2 p) {
     return clamp(sc.x,0.0,1.0) * clamp(sc.y,0.0,1.0);
 }
 
+float glow(vec2 uv) {
+    return smoothstep(0.0, 1.0, 1.0 - 2.0 * abs(uv.x));
+}
+
+float dashed(vec2 uv) {
+    float fy = fract(uv.y / 4.0);
+    float w = step(fy, 0.5);
+    fy *= 4.0;
+    if (fy >= 1.5) {
+        fy -= 1.5;
+    } else if (fy <= 0.5) {
+        fy = 0.5 - fy;
+    } else {
+        fy = 0.0;
+    }
+    w *= smoothstep(0.0, 1.0, 6.0 * (0.25 - (uv.x * uv.x + fy * fy)));
+    return w;
+}
+
+float dotted(vec2 uv) {
+    float fy = 4.0 * fract(uv.y / 4.0) - 0.5;
+    return smoothstep(0.0, 1.0, 6.0 * (0.25 - (uv.x * uv.x + fy * fy)));
+}
+
+// Line style (dashed/dotted/glow) mask.
+float lineStyleMask(vec2 uv) {
+    if (lineStyle == 2) return dashed(uv);
+    if (lineStyle == 3) return dotted(uv);
+    if (lineStyle == 4) return glow(uv);
+    return 1.0;
+}
+
 void main(void) {
     vec4 result;
     float scissor = scissorMask(fpos);
-    float strokeAlpha = 1.0;
+    float strokeAlpha = lineStyleMask(uv);
+
+    if (lineStyle > 1 && strokeAlpha < strokeThr) discard;
 
     if (type == 0) {			// Gradient
         // Calculate gradient color using box gradient

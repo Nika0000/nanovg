@@ -134,8 +134,12 @@ typedef struct VKNVGfragUniforms {
 	float feather;
 	float strokeMult;
 	float strokeThr;
+	int lineStyle;
 	int texType;
 	int type;
+	// std430 rounds the array stride up to a multiple of the struct's 16-byte
+	// base alignment; keep sizeof() in sync with it.
+	int padding[3];
 } VKNVGfragUniforms;
 
 typedef struct VKNVGBuffer {
@@ -443,7 +447,7 @@ static VkResult vknvg_memory_type_from_properties(VkPhysicalDeviceMemoryProperti
 	return VK_ERROR_FORMAT_NOT_SUPPORTED;
 }
 
-static int vknvg_convertPaint(VKNVGcontext* vk, VKNVGfragUniforms* frag, NVGpaint* paint, NVGscissor* scissor, float width, float fringe, float strokeThr) {
+static int vknvg_convertPaint(VKNVGcontext* vk, VKNVGfragUniforms* frag, NVGpaint* paint, NVGscissor* scissor, float width, float fringe, float strokeThr, int lineStyle) {
 	VKNVGtexture* tex = nullptr;
 	float invxform[6];
 
@@ -470,6 +474,7 @@ static int vknvg_convertPaint(VKNVGcontext* vk, VKNVGfragUniforms* frag, NVGpain
 	memcpy(frag->extent, paint->extent, sizeof(frag->extent));
 	frag->strokeMult = (width * 0.5f + fringe * 0.5f) / fringe;
 	frag->strokeThr  = strokeThr;
+	frag->lineStyle  = lineStyle;
 
 	if (paint->image != 0) {
 		tex = vknvg_findTexture(vk, paint->image);
@@ -788,7 +793,7 @@ static VKNVGPipeline* vknvg_createPipeline(VKNVGcontext* vk, VKNVGCreatePipeline
 	vi_bindings[0].stride    = sizeof(NVGvertex);
 	vi_bindings[0].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
-	VkVertexInputAttributeDescription vi_attrs[2] = {
+	VkVertexInputAttributeDescription vi_attrs[3] = {
 #ifdef __cplusplus
 	    {},
 #else
@@ -803,11 +808,15 @@ static VKNVGPipeline* vknvg_createPipeline(VKNVGcontext* vk, VKNVGCreatePipeline
 	vi_attrs[1].location = 1;
 	vi_attrs[1].format   = VK_FORMAT_R32G32_SFLOAT;
 	vi_attrs[1].offset   = (2 * sizeof(float));
+	vi_attrs[2].binding  = 0;
+	vi_attrs[2].location = 2;
+	vi_attrs[2].format   = VK_FORMAT_R32G32_SFLOAT;
+	vi_attrs[2].offset   = (4 * sizeof(float));
 
 	VkPipelineVertexInputStateCreateInfo vi = {VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
 	vi.vertexBindingDescriptionCount        = 1;
 	vi.pVertexBindingDescriptions           = vi_bindings;
-	vi.vertexAttributeDescriptionCount      = 2;
+	vi.vertexAttributeDescriptionCount      = 3;
 	vi.pVertexAttributeDescriptions         = vi_attrs;
 
 	VkPipelineInputAssemblyStateCreateInfo ia = {VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};
@@ -1821,13 +1830,13 @@ static void vknvg_renderFill(void* uptr, NVGpaint* paint, NVGcompositeOperationS
 		frag->strokeThr = -1.0f;
 		frag->type      = NSVG_SHADER_SIMPLE;
 		// Fill shader
-		vknvg_convertPaint(vk, vknvg_fragUniformPtr(vk, call->uniformOffset + vk->fragSize), paint, scissor, fringe, fringe, -1.0f);
+		vknvg_convertPaint(vk, vknvg_fragUniformPtr(vk, call->uniformOffset + vk->fragSize), paint, scissor, fringe, fringe, -1.0f, 0);
 	} else {
 		call->uniformOffset = vknvg_allocFragUniforms(vk, 1);
 		if (call->uniformOffset == -1)
 			goto error;
 		// Fill shader
-		vknvg_convertPaint(vk, vknvg_fragUniformPtr(vk, call->uniformOffset), paint, scissor, fringe, fringe, -1.0f);
+		vknvg_convertPaint(vk, vknvg_fragUniformPtr(vk, call->uniformOffset), paint, scissor, fringe, fringe, -1.0f, 0);
 	}
 
 	return;
@@ -1839,7 +1848,7 @@ error:
 		vk->ncalls--;
 }
 
-static void vknvg_renderStroke(void* uptr, NVGpaint* paint, NVGcompositeOperationState compositeOperation, NVGscissor* scissor, float fringe, float strokeWidth, const NVGpath* paths, int npaths) {
+static void vknvg_renderStroke(void* uptr, NVGpaint* paint, NVGcompositeOperationState compositeOperation, NVGscissor* scissor, float fringe, float strokeWidth, int lineStyle, const NVGpath* paths, int npaths) {
 #ifdef __cplusplus
 	auto* vk = static_cast<VKNVGcontext*>(uptr);
 #else
@@ -1883,15 +1892,15 @@ static void vknvg_renderStroke(void* uptr, NVGpaint* paint, NVGcompositeOperatio
 		if (call->uniformOffset == -1)
 			goto error;
 
-		vknvg_convertPaint(vk, vknvg_fragUniformPtr(vk, call->uniformOffset), paint, scissor, strokeWidth, fringe, -1.0f);
-		vknvg_convertPaint(vk, vknvg_fragUniformPtr(vk, call->uniformOffset + vk->fragSize), paint, scissor, strokeWidth, fringe, 1.0f - 0.5f / 255.0f);
+		vknvg_convertPaint(vk, vknvg_fragUniformPtr(vk, call->uniformOffset), paint, scissor, strokeWidth, fringe, -1.0f, lineStyle);
+		vknvg_convertPaint(vk, vknvg_fragUniformPtr(vk, call->uniformOffset + vk->fragSize), paint, scissor, strokeWidth, fringe, 1.0f - 0.5f / 255.0f, lineStyle);
 
 	} else {
 		// Fill shader
 		call->uniformOffset = vknvg_allocFragUniforms(vk, 1);
 		if (call->uniformOffset == -1)
 			goto error;
-		vknvg_convertPaint(vk, vknvg_fragUniformPtr(vk, call->uniformOffset), paint, scissor, strokeWidth, fringe, -1.0f);
+		vknvg_convertPaint(vk, vknvg_fragUniformPtr(vk, call->uniformOffset), paint, scissor, strokeWidth, fringe, -1.0f, lineStyle);
 	}
 
 	return;
@@ -1933,7 +1942,7 @@ static void vknvg_renderTriangles(void* uptr, NVGpaint* paint, NVGcompositeOpera
 	if (call->uniformOffset == -1)
 		goto error;
 	frag = vknvg_fragUniformPtr(vk, call->uniformOffset);
-	vknvg_convertPaint(vk, frag, paint, scissor, 1.0f, fringe, -1.0f);
+	vknvg_convertPaint(vk, frag, paint, scissor, 1.0f, fringe, -1.0f, 0);
 	frag->type = NSVG_SHADER_IMG;
 
 	return;

@@ -108,6 +108,7 @@ struct MNVGfragUniforms
     float feather;
     float strokeMult;
     float strokeThr;
+    int lineStyle;
     int texType;
     MNVGshaderType type;
 };
@@ -234,6 +235,7 @@ typedef struct MNVGfragUniforms MNVGfragUniforms;
                       scissor:(NVGscissor*)scissor
                        fringe:(float)fringe
                   strokeWidth:(float)strokeWidth
+                    lineStyle:(int)lineStyle
                         paths:(const NVGpath*)paths
                        npaths:(int)npaths;
 
@@ -410,7 +412,7 @@ static int mtlnvg__renderGetTextureSize(void* uptr, int image, int* w, int* h)
 static void mtlnvg__renderStroke(void* uptr, NVGpaint* paint,
     NVGcompositeOperationState compositeOperation,
     NVGscissor* scissor, float fringe,
-    float strokeWidth, const NVGpath* paths,
+    float strokeWidth, int lineStyle, const NVGpath* paths,
     int npaths)
 {
     MNVGcontext* mtl = (__bridge MNVGcontext*)uptr;
@@ -419,6 +421,7 @@ static void mtlnvg__renderStroke(void* uptr, NVGpaint* paint,
                        scissor:scissor
                         fringe:fringe
                    strokeWidth:strokeWidth
+                     lineStyle:lineStyle
                          paths:paths
                         npaths:npaths];
 }
@@ -489,7 +492,7 @@ NVGcontext* nvgCreateMTL(void* metalLayer, int flags)
     params.renderStroke         = mtlnvg__renderStroke;
     params.renderTriangles      = mtlnvg__renderTriangles;
     params.renderDelete         = mtlnvg__renderDelete;
-    params.userPtr              = (__bridge_retained void*)mtl;
+    params.userPtr              = (void*)CFBridgingRetain(mtl);
     params.edgeAntiAlias        = flags & NVG_ANTIALIAS ? 1 : 0;
 
     mtl.flags = flags;
@@ -838,6 +841,7 @@ enum MNVGTarget mnvgTarget()
                      width:(float)width
                     fringe:(float)fringe
                  strokeThr:(float)strokeThr
+                 lineStyle:(int)lineStyle
 {
     MNVGtexture* tex = nil;
     float invxform[6];
@@ -870,6 +874,7 @@ enum MNVGTarget mnvgTarget()
     frag->extent     = (vector_float2) { paint->extent[0], paint->extent[1] };
     frag->strokeMult = (width * 0.5f + fringe * 0.5f) / fringe;
     frag->strokeThr  = strokeThr;
+    frag->lineStyle  = lineStyle;
 
     if (paint->image != 0)
     {
@@ -1152,6 +1157,10 @@ enum MNVGTarget mnvgTarget()
     _vertexDescriptor.attributes[1].format      = MTLVertexFormatFloat2;
     _vertexDescriptor.attributes[1].bufferIndex = 0;
     _vertexDescriptor.attributes[1].offset      = offsetof(NVGvertex, u);
+
+    _vertexDescriptor.attributes[2].format      = MTLVertexFormatFloat2;
+    _vertexDescriptor.attributes[2].bufferIndex = 0;
+    _vertexDescriptor.attributes[2].offset      = offsetof(NVGvertex, s);
 
     _vertexDescriptor.layouts[0].stride       = sizeof(NVGvertex);
     _vertexDescriptor.layouts[0].stepFunction = MTLVertexStepFunctionPerVertex;
@@ -1546,7 +1555,8 @@ enum MNVGTarget mnvgTarget()
                       scissor:scissor
                         width:fringe
                        fringe:fringe
-                    strokeThr:-1.0f];
+                    strokeThr:-1.0f
+                    lineStyle:0];
     return;
 
 error:
@@ -1673,6 +1683,7 @@ error:
                       scissor:(NVGscissor*)scissor
                        fringe:(float)fringe
                   strokeWidth:(float)strokeWidth
+                    lineStyle:(int)lineStyle
                         paths:(const NVGpath*)paths
                        npaths:(int)npaths
 {
@@ -1721,7 +1732,8 @@ error:
                           scissor:scissor
                             width:strokeWidth
                            fringe:fringe
-                        strokeThr:-1.0f];
+                        strokeThr:-1.0f
+                        lineStyle:lineStyle];
         MNVGfragUniforms* frag = [self
             fragUniformAtIndex:call->uniformOffset + _fragSize];
         [self convertPaintForFrag:frag
@@ -1729,7 +1741,8 @@ error:
                           scissor:scissor
                             width:strokeWidth
                            fringe:fringe
-                        strokeThr:(1.0f - 0.5f / 255.0f)];
+                        strokeThr:(1.0f - 0.5f / 255.0f)
+                        lineStyle:lineStyle];
     }
     else
     {
@@ -1742,7 +1755,8 @@ error:
                           scissor:scissor
                             width:strokeWidth
                            fringe:fringe
-                        strokeThr:-1.0f];
+                        strokeThr:-1.0f
+                        lineStyle:lineStyle];
     }
 
     return;
@@ -1790,7 +1804,8 @@ error:
                       scissor:scissor
                         width:1.0f
                        fringe:fringe
-                    strokeThr:-1.0f];
+                    strokeThr:-1.0f
+                    lineStyle:0];
     frag->type = MNVG_SHADER_IMG;
 
     return;

@@ -23,6 +23,7 @@ namespace nvg {
 		constexpr std::array VertexAttribState = {
 		    DkVtxAttribState{0, 0, offsetof(NVGvertex, x), DkVtxAttribSize_2x32, DkVtxAttribType_Float, 0},
 		    DkVtxAttribState{0, 0, offsetof(NVGvertex, u), DkVtxAttribSize_2x32, DkVtxAttribType_Float, 0},
+		    DkVtxAttribState{0, 0, offsetof(NVGvertex, s), DkVtxAttribSize_2x32, DkVtxAttribType_Float, 0},
 		};
 
 		struct View {

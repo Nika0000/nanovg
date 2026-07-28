@@ -237,6 +237,16 @@
   ]
  },
  {
+  "name": "nvgLineStyle",
+  "js": "lineStyle",
+  "section": "Render styles",
+  "signature": "void nvgLineStyle(NVGcontext* ctx, int lineStyle)",
+  "doc": "Sets how line is drawn. Can be one of NVG_LINE_SOLID (default), NVG_LINE_GLOW, NVG_LINE_DASHED, NVG_LINE_DOTTED",
+  "args": [
+   "lineStyle"
+  ]
+ },
+ {
   "name": "nvgLineCap",
   "js": "lineCap",
   "section": "Render styles",

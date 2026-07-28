@@ -127,6 +127,7 @@ struct D3DNVGfragUniforms {
 	float strokeMult[4];
 	int texType;
 	int type;
+	int lineStyle;
 };
 #pragma pack(pop)
 
@@ -239,6 +240,7 @@ struct D3DNVGcontext {
 
 	ID3D11DepthStencilState* pDepthStencilDrawShapes;
 	ID3D11DepthStencilState* pDepthStencilDrawAA;
+	ID3D11DepthStencilState* pDepthStencilStrokeBase;
 	ID3D11DepthStencilState* pDepthStencilFill;
 	ID3D11DepthStencilState* pDepthStencilDefault;
 };
@@ -389,6 +391,8 @@ static void D3Dnvg__copyVerts(struct NVGvertex* pDest, const struct NVGvertex* p
 		pDest[i].y = pSource[i].y;
 		pDest[i].u = pSource[i].u;
 		pDest[i].v = pSource[i].v;
+		pDest[i].s = pSource[i].s;
+		pDest[i].t = pSource[i].t;
 	}
 }
 
@@ -443,6 +447,8 @@ static int D3Dnvg__renderCreate(void* uptr) {
 	const D3D11_DEPTH_STENCILOP_DESC backOp  = {D3D11_STENCIL_OP_KEEP, D3D11_STENCIL_OP_KEEP, D3D11_STENCIL_OP_DECR, D3D11_COMPARISON_ALWAYS};
 
 	const D3D11_DEPTH_STENCILOP_DESC aaOp   = {D3D11_STENCIL_OP_KEEP, D3D11_STENCIL_OP_KEEP, D3D11_STENCIL_OP_KEEP, D3D11_COMPARISON_EQUAL};
+	// Stroke base pass: only paint pixels not yet covered by this stroke, and mark them.
+	const D3D11_DEPTH_STENCILOP_DESC strokeBaseOp = {D3D11_STENCIL_OP_KEEP, D3D11_STENCIL_OP_KEEP, D3D11_STENCIL_OP_INCR, D3D11_COMPARISON_EQUAL};
 	const D3D11_DEPTH_STENCILOP_DESC fillOp = {D3D11_STENCIL_OP_ZERO, D3D11_STENCIL_OP_ZERO, D3D11_STENCIL_OP_ZERO, D3D11_COMPARISON_NOT_EQUAL};
 
 	const D3D11_DEPTH_STENCILOP_DESC defaultOp = {D3D11_STENCIL_OP_KEEP, D3D11_STENCIL_OP_KEEP, D3D11_STENCIL_OP_KEEP, D3D11_COMPARISON_ALWAYS};
@@ -450,7 +456,7 @@ static int D3Dnvg__renderCreate(void* uptr) {
 	D3D11_INPUT_ELEMENT_DESC LayoutRenderTriangles[] =
 	    {
 	        {"POSITION", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0},
-	        {"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 8, D3D11_INPUT_PER_VERTEX_DATA, 0}};
+	        {"TEXCOORD", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 8, D3D11_INPUT_PER_VERTEX_DATA, 0}};
 
 	if (D3D->flags & NVG_ANTIALIAS) {
 		if (D3Dnvg__createShader(D3D, &D3D->shader, g_D3D11VertexShader_Main, sizeof(g_D3D11VertexShader_Main), g_D3D11PixelShaderAA_Main, sizeof(g_D3D11PixelShaderAA_Main)) == 0)
@@ -553,6 +559,11 @@ static int D3Dnvg__renderCreate(void* uptr) {
 	depthStencilDesc.BackFace  = aaOp;
 
 	hr = D3D_API_2(D3D->pDevice, CreateDepthStencilState, &depthStencilDesc, &D3D->pDepthStencilDrawAA);
+
+	// Stroke base (stencil == 0 -> draw and increment)
+	depthStencilDesc.FrontFace = strokeBaseOp;
+	depthStencilDesc.BackFace  = strokeBaseOp;
+	hr                         = D3D_API_2(D3D->pDevice, CreateDepthStencilState, &depthStencilDesc, &D3D->pDepthStencilStrokeBase);
 
 	// Stencil Fill
 	depthStencilDesc.FrontFace = fillOp;
@@ -779,14 +790,15 @@ static struct NVGcolor D3Dnvg__premulColor(struct NVGcolor c) {
 	return c;
 }
 
-static int D3Dnvg__convertPaint(struct D3DNVGcontext* D3D, struct D3DNVGfragUniforms* frag, struct NVGpaint* paint, struct NVGscissor* scissor, float width, float fringe, float strokeThr) {
+static int D3Dnvg__convertPaint(struct D3DNVGcontext* D3D, struct D3DNVGfragUniforms* frag, struct NVGpaint* paint, struct NVGscissor* scissor, float width, float fringe, float strokeThr, int lineStyle) {
 	struct D3DNVGtexture* tex = NULL;
 	float invxform[6], paintMat[9], scissorMat[9];
 
 	memset(frag, 0, sizeof(*frag));
 
-	frag->innerCol = D3Dnvg__premulColor(paint->innerColor);
-	frag->outerCol = D3Dnvg__premulColor(paint->outerColor);
+	frag->innerCol  = D3Dnvg__premulColor(paint->innerColor);
+	frag->outerCol  = D3Dnvg__premulColor(paint->outerColor);
+	frag->lineStyle = lineStyle;
 
 	if (scissor->extent[0] < -0.5f || scissor->extent[1] < -0.5f) {
 		memset(scissorMat, 0, sizeof(scissorMat));
@@ -994,8 +1006,8 @@ static void D3Dnvg__stroke(struct D3DNVGcontext* D3D, struct D3DNVGcall* call) {
 	D3D_API_1(D3D->pDeviceContext, IASetPrimitiveTopology, D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
 
 	if (D3D->flags & NVG_STENCIL_STROKES) {
-		// Fill the stroke base without overlap
-		D3D_API_2(D3D->pDeviceContext, OMSetDepthStencilState, D3D->pDepthStencilDefault, 0);
+		// Fill the stroke base without overlap (stencil == 0 -> draw, then increment)
+		D3D_API_2(D3D->pDeviceContext, OMSetDepthStencilState, D3D->pDepthStencilStrokeBase, 0);
 
 		D3Dnvg__setUniforms(D3D, call->uniformOffset + D3D->fragSize, call->image);
 		for (i = 0; i < npaths; i++) {
@@ -1009,11 +1021,13 @@ static void D3Dnvg__stroke(struct D3DNVGcontext* D3D, struct D3DNVGcall* call) {
 			D3D_API_2(D3D->pDeviceContext, Draw, paths[i].strokeCount, paths[i].strokeOffset);
 		}
 
-		// Clear stencil buffer.
+		// Clear stencil buffer (no color write).
+		D3D_API_3(D3D->pDeviceContext, OMSetBlendState, D3D->pBSNoWrite, NULL, 0xFFFFFFFF);
 		D3D_API_2(D3D->pDeviceContext, OMSetDepthStencilState, D3D->pDepthStencilFill, 0);
 		for (i = 0; i < npaths; i++) {
 			D3D_API_2(D3D->pDeviceContext, Draw, paths[i].strokeCount, paths[i].strokeOffset);
 		}
+		D3D_API_3(D3D->pDeviceContext, OMSetBlendState, D3D->pBSBlend, NULL, 0xFFFFFFFF);
 
 		D3D_API_2(D3D->pDeviceContext, OMSetDepthStencilState, D3D->pDepthStencilDefault, 0);
 	} else {
@@ -1240,12 +1254,12 @@ static void D3Dnvg__renderFill(void* uptr, struct NVGpaint* paint, NVGcompositeO
 		frag->strokeMult[1] = -1.0f;
 		frag->type          = NSVG_SHADER_SIMPLE;
 		// Fill shader
-		D3Dnvg__convertPaint(D3D, nvg__fragUniformPtr(D3D, call->uniformOffset + D3D->fragSize), paint, scissor, fringe, fringe, -1.0f);
+		D3Dnvg__convertPaint(D3D, nvg__fragUniformPtr(D3D, call->uniformOffset + D3D->fragSize), paint, scissor, fringe, fringe, -1.0f, 0);
 	} else {
 		call->uniformOffset = D3Dnvg__allocFragUniforms(D3D, 1);
 		if (call->uniformOffset == -1) goto error;
 		// Fill shader
-		D3Dnvg__convertPaint(D3D, nvg__fragUniformPtr(D3D, call->uniformOffset), paint, scissor, fringe, fringe, -1.0f);
+		D3Dnvg__convertPaint(D3D, nvg__fragUniformPtr(D3D, call->uniformOffset), paint, scissor, fringe, fringe, -1.0f, 0);
 	}
 
 	return;
@@ -1256,7 +1270,7 @@ error:
 	if (D3D->ncalls > 0) D3D->ncalls--;
 }
 
-static void D3Dnvg__renderStroke(void* uptr, struct NVGpaint* paint, NVGcompositeOperationState compositeOperation, struct NVGscissor* scissor, float fringe, float strokeWidth, const struct NVGpath* paths, int npaths) {
+static void D3Dnvg__renderStroke(void* uptr, struct NVGpaint* paint, NVGcompositeOperationState compositeOperation, struct NVGscissor* scissor, float fringe, float strokeWidth, int lineStyle, const struct NVGpath* paths, int npaths) {
 	struct D3DNVGcontext* D3D = (struct D3DNVGcontext*) uptr;
 	struct D3DNVGcall* call   = D3Dnvg__allocCall(D3D);
 	int maxverts, offset;
@@ -1292,14 +1306,14 @@ static void D3Dnvg__renderStroke(void* uptr, struct NVGpaint* paint, NVGcomposit
 		call->uniformOffset = D3Dnvg__allocFragUniforms(D3D, 2);
 		if (call->uniformOffset == -1) goto error;
 
-		D3Dnvg__convertPaint(D3D, nvg__fragUniformPtr(D3D, call->uniformOffset), paint, scissor, strokeWidth, fringe, -1.0f);
-		D3Dnvg__convertPaint(D3D, nvg__fragUniformPtr(D3D, call->uniformOffset + D3D->fragSize), paint, scissor, strokeWidth, fringe, 1.0f - 0.5f / 255.0f);
+		D3Dnvg__convertPaint(D3D, nvg__fragUniformPtr(D3D, call->uniformOffset), paint, scissor, strokeWidth, fringe, -1.0f, lineStyle);
+		D3Dnvg__convertPaint(D3D, nvg__fragUniformPtr(D3D, call->uniformOffset + D3D->fragSize), paint, scissor, strokeWidth, fringe, 1.0f - 0.5f / 255.0f, lineStyle);
 
 	} else {
 		// Fill shader
 		call->uniformOffset = D3Dnvg__allocFragUniforms(D3D, 1);
 		if (call->uniformOffset == -1) goto error;
-		D3Dnvg__convertPaint(D3D, nvg__fragUniformPtr(D3D, call->uniformOffset), paint, scissor, strokeWidth, fringe, -1.0f);
+		D3Dnvg__convertPaint(D3D, nvg__fragUniformPtr(D3D, call->uniformOffset), paint, scissor, strokeWidth, fringe, -1.0f, lineStyle);
 	}
 
 	return;
@@ -1332,7 +1346,7 @@ static void D3Dnvg__renderTriangles(void* uptr, struct NVGpaint* paint, NVGcompo
 	call->uniformOffset = D3Dnvg__allocFragUniforms(D3D, 1);
 	if (call->uniformOffset == -1) goto error;
 	frag = nvg__fragUniformPtr(D3D, call->uniformOffset);
-	D3Dnvg__convertPaint(D3D, frag, paint, scissor, 1.0f, fringe, -1.0f);
+	D3Dnvg__convertPaint(D3D, frag, paint, scissor, 1.0f, fringe, -1.0f, 0);
 	frag->type = NSVG_SHADER_IMG;
 
 	return;
@@ -1376,6 +1390,7 @@ static void D3Dnvg__renderDelete(void* uptr) {
 	D3D_API_RELEASE(D3D->pRSNoCull);
 	D3D_API_RELEASE(D3D->pDepthStencilDrawShapes);
 	D3D_API_RELEASE(D3D->pDepthStencilDrawAA);
+	D3D_API_RELEASE(D3D->pDepthStencilStrokeBase);
 	D3D_API_RELEASE(D3D->pDepthStencilFill);
 	D3D_API_RELEASE(D3D->pDepthStencilDefault);
 
