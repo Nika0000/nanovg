@@ -20,6 +20,7 @@ nvg.roundedRect(w / 2 - 140, h / 2 - 70, 280, 140, 16);
 nvg.fillColor(nvg.hex('#2b3a5b'));
 nvg.fill();
 
+nvg.lineStyle(nvg.LINE_DASHED);
 nvg.strokeWidth(2);
 nvg.strokeColor(nvg.hex('#7aa2f7'));
 nvg.stroke();

@@ -68,7 +68,7 @@ static NVGcolor dknvg__premulColor(NVGcolor c) {
 }
 
 static int dknvg__convertPaint(DKNVGcontext* dk, DKNVGfragUniforms* frag, NVGpaint* paint,
-                               NVGscissor* scissor, float width, float fringe, float strokeThr) {
+                               NVGscissor* scissor, float width, float fringe, float strokeThr, int lineStyle) {
 	const DKNVGtextureDescriptor* tex = NULL;
 	float invxform[6];
 
@@ -95,6 +95,7 @@ static int dknvg__convertPaint(DKNVGcontext* dk, DKNVGfragUniforms* frag, NVGpai
 	memcpy(frag->extent, paint->extent, sizeof(frag->extent));
 	frag->strokeMult = (width * 0.5f + fringe * 0.5f) / fringe;
 	frag->strokeThr  = strokeThr;
+	frag->lineStyle  = lineStyle;
 
 	if (paint->image != 0) {
 		tex = dknvg__findTexture(dk, paint->image);
@@ -341,12 +342,12 @@ static void dknvg__renderFill(void* uptr, NVGpaint* paint, NVGcompositeOperation
 		frag->strokeThr = -1.0f;
 		frag->type      = NSVG_SHADER_SIMPLE;
 		// Fill shader
-		dknvg__convertPaint(dk, nvg__fragUniformPtr(dk, call->uniformOffset + dk->fragSize), paint, scissor, fringe, fringe, -1.0f);
+		dknvg__convertPaint(dk, nvg__fragUniformPtr(dk, call->uniformOffset + dk->fragSize), paint, scissor, fringe, fringe, -1.0f, 0);
 	} else {
 		call->uniformOffset = dknvg__allocFragUniforms(dk, 1);
 		if (call->uniformOffset == -1) goto error;
 		// Fill shader
-		dknvg__convertPaint(dk, nvg__fragUniformPtr(dk, call->uniformOffset), paint, scissor, fringe, fringe, -1.0f);
+		dknvg__convertPaint(dk, nvg__fragUniformPtr(dk, call->uniformOffset), paint, scissor, fringe, fringe, -1.0f, 0);
 	}
 
 	return;
@@ -358,7 +359,7 @@ error:
 }
 
 static void dknvg__renderStroke(void* uptr, NVGpaint* paint, NVGcompositeOperationState compositeOperation, NVGscissor* scissor, float fringe,
-                                float strokeWidth, const NVGpath* paths, int npaths) {
+                                float strokeWidth, int lineStyle, const NVGpath* paths, int npaths) {
 	DKNVGcontext* dk = (DKNVGcontext*) uptr;
 	DKNVGcall* call  = dknvg__allocCall(dk);
 	int i, maxverts, offset;
@@ -396,14 +397,14 @@ static void dknvg__renderStroke(void* uptr, NVGpaint* paint, NVGcompositeOperati
 		call->uniformOffset = dknvg__allocFragUniforms(dk, 2);
 		if (call->uniformOffset == -1) goto error;
 
-		dknvg__convertPaint(dk, nvg__fragUniformPtr(dk, call->uniformOffset), paint, scissor, strokeWidth, fringe, -1.0f);
-		dknvg__convertPaint(dk, nvg__fragUniformPtr(dk, call->uniformOffset + dk->fragSize), paint, scissor, strokeWidth, fringe, 1.0f - 0.5f / 255.0f);
+		dknvg__convertPaint(dk, nvg__fragUniformPtr(dk, call->uniformOffset), paint, scissor, strokeWidth, fringe, -1.0f, lineStyle);
+		dknvg__convertPaint(dk, nvg__fragUniformPtr(dk, call->uniformOffset + dk->fragSize), paint, scissor, strokeWidth, fringe, 1.0f - 0.5f / 255.0f, lineStyle);
 	} else {
 		// Fill shader
 		call->uniformOffset = dknvg__allocFragUniforms(dk, 1);
 		if (call->uniformOffset == -1) goto error;
 
-		dknvg__convertPaint(dk, nvg__fragUniformPtr(dk, call->uniformOffset), paint, scissor, strokeWidth, fringe, -1.0f);
+		dknvg__convertPaint(dk, nvg__fragUniformPtr(dk, call->uniformOffset), paint, scissor, strokeWidth, fringe, -1.0f, lineStyle);
 	}
 
 	return;
@@ -437,7 +438,7 @@ static void dknvg__renderTriangles(void* uptr, NVGpaint* paint, NVGcompositeOper
 	call->uniformOffset = dknvg__allocFragUniforms(dk, 1);
 	if (call->uniformOffset == -1) goto error;
 	frag = nvg__fragUniformPtr(dk, call->uniformOffset);
-	dknvg__convertPaint(dk, frag, paint, scissor, 1.0f, fringe, -1.0f);
+	dknvg__convertPaint(dk, frag, paint, scissor, 1.0f, fringe, -1.0f, 0);
 	frag->type = NSVG_SHADER_IMG;
 
 	return;

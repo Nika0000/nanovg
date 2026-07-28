@@ -89,6 +89,7 @@ struct DKNVGfragUniforms {
 	float feather;
 	float strokeMult;
 	float strokeThr;
+	int lineStyle;
 	int texType;
 	int type;
 };

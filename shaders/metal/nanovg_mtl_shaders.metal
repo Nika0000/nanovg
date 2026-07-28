@@ -29,12 +29,14 @@ using namespace metal;
 typedef struct {
   float2 pos [[attribute(0)]];
   float2 tcoord [[attribute(1)]];
+  float2 lcoord [[attribute(2)]];
 } Vertex;
 
 typedef struct {
   float4 pos  [[position]];
   float2 fpos;
   float2 ftcoord;
+  float2 uv;
 } RasterizerData;
 
 typedef struct  {
@@ -49,6 +51,7 @@ typedef struct  {
   float feather;
   float strokeMult;
   float strokeThr;
+  int lineStyle;
   int texType;
   int type;
 } Uniforms;
@@ -56,6 +59,10 @@ typedef struct  {
 float scissorMask(constant Uniforms& uniforms, float2 p);
 float sdroundrect(constant Uniforms& uniforms, float2 pt);
 float strokeMask(constant Uniforms& uniforms, float2 ftcoord);
+float glow(float2 uv);
+float dashed(float2 uv);
+float dotted(float2 uv);
+float lineStyleMask(constant Uniforms& uniforms, float2 uv);
 
 float scissorMask(constant Uniforms& uniforms, float2 p) {
   float2 sc = (abs((uniforms.scissorMat * float3(p, 1.0f)).xy)
@@ -76,11 +83,46 @@ float strokeMask(constant Uniforms& uniforms, float2 ftcoord) {
          * min(1.0, ftcoord.y);
 }
 
+float glow(float2 uv) {
+  return smoothstep(0.0, 1.0, 1.0 - 2.0 * abs(uv.x));
+}
+
+float dashed(float2 uv) {
+  float fy = fract(uv.y / 4.0);
+  float w = step(fy, 0.5);
+  fy *= 4.0;
+  if (fy >= 1.5) {
+    fy -= 1.5;
+  } else if (fy <= 0.5) {
+    fy = 0.5 - fy;
+  } else {
+    fy = 0.0;
+  }
+  w *= smoothstep(0.0, 1.0, 6.0 * (0.25 - (uv.x * uv.x + fy * fy)));
+  return w;
+}
+
+float dotted(float2 uv) {
+  float fy = 4.0 * fract(uv.y / 4.0) - 0.5;
+  return smoothstep(0.0, 1.0, 6.0 * (0.25 - (uv.x * uv.x + fy * fy)));
+}
+
+float lineStyleMask(constant Uniforms& uniforms, float2 uv) {
+  if (uniforms.lineStyle == 2)
+    return dashed(uv);
+  if (uniforms.lineStyle == 3)
+    return dotted(uv);
+  if (uniforms.lineStyle == 4)
+    return glow(uv);
+  return 1.0;
+}
+
 // Vertex Function
 vertex RasterizerData vertexShader(Vertex vert [[stage_in]],
                                    constant float2& viewSize [[buffer(1)]]) {
   RasterizerData out;
   out.ftcoord = vert.tcoord;
+  out.uv = 0.5 * vert.lcoord;
   out.fpos = vert.pos;
   out.pos = float4(2.0 * vert.pos.x / viewSize.x - 1.0,
                    1.0 - 2.0 * vert.pos.y / viewSize.y,
@@ -97,12 +139,16 @@ fragment float4 fragmentShader(RasterizerData in [[stage_in]],
   if (scissor == 0)
     return float4(0);
 
+  float strokeAlpha = lineStyleMask(uniforms, in.uv);
+  if (uniforms.lineStyle > 1 && strokeAlpha < uniforms.strokeThr)
+    return float4(0);
+
   if (uniforms.type == 0) {  // MNVG_SHADER_FILLGRAD
     float2 pt = (uniforms.paintMat * float3(in.fpos, 1.0)).xy;
     float d = saturate((uniforms.feather * 0.5 + sdroundrect(uniforms, pt))
                        / uniforms.feather);
     float4 color = mix(uniforms.innerCol, uniforms.outerCol, d);
-    return color * scissor;
+    return color * strokeAlpha * scissor;
   } else if (uniforms.type == 1) {  // MNVG_SHADER_FILLIMG
     float2 pt = (uniforms.paintMat * float3(in.fpos, 1.0)).xy / uniforms.extent;
     float4 color = texture.sample(sampler, pt);
@@ -110,7 +156,7 @@ fragment float4 fragmentShader(RasterizerData in [[stage_in]],
       color = float4(color.xyz * color.w, color.w);
     else if (uniforms.texType == 2)
       color = float4(color.x);
-    color *= scissor;
+    color *= strokeAlpha * scissor;
     return color * uniforms.innerCol;
   } else {  // MNVG_SHADER_IMG
     float4 color = texture.sample(sampler, in.ftcoord);
@@ -142,7 +188,8 @@ fragment float4 fragmentShaderAA(RasterizerData in [[stage_in]],
     return color * uniforms.innerCol;
   }
 
-  float strokeAlpha = strokeMask(uniforms, in.ftcoord);
+  float strokeAlpha = strokeMask(uniforms, in.ftcoord)
+                      * lineStyleMask(uniforms, in.uv);
   if (strokeAlpha < uniforms.strokeThr) {
     return float4(0);
   }
