@@ -1799,6 +1799,8 @@ static int nvg__expandStroke(NVGcontext* ctx, float w, float fringe, int lineCap
 		}
 		const float tScale = invStrokeWidth * pathScale;
 
+		float closeT = 0.0f;
+
 		int dir = 1;
 		if (lineStyle > 1 && path->reversed) {
 			dir = -1;
@@ -1817,6 +1819,11 @@ static int nvg__expandStroke(NVGcontext* ctx, float w, float fringe, int lineCap
 				p0 = &pts[0];
 				p1 = &pts[1];
 			}
+		}
+
+		if (lineStyle > 1 && loop) {
+			closeT = pts[path->count - 1].len * tScale;
+			t -= dir * closeT;
 		}
 
 		if (loop == 0) {
@@ -1859,7 +1866,7 @@ static int nvg__expandStroke(NVGcontext* ctx, float w, float fringe, int lineCap
 		}
 
 		if (loop) {
-			// Loop it
+			t += dir * closeT;
 			nvg__vset(dst, verts[0].x, verts[0].y, u0, 1, -1, t);
 			dst++;
 			nvg__vset(dst, verts[1].x, verts[1].y, u1, 1, 1, t);
