@@ -2,16 +2,17 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-SHADER="$SCRIPT_DIR/include/nanovg/nanovg_mtl_shaders.metal"
-OUTDIR="$SCRIPT_DIR/include/nanovg/mnvg_bitcode"
+SHADER="$SCRIPT_DIR/../shaders/metal/nanovg_mtl_shaders.metal"
+OUTDIR="$SCRIPT_DIR/../shaders/metal"
 TMPDIR=$(mktemp -d)
 
 generate() {
     local sdk=$1
     local name=$2
+    local min_flag=$3
     local var_name="mnvg_bitcode_${name}"
 
-    xcrun -sdk "$sdk" metal -c "$SHADER" -o "$TMPDIR/${name}.air"
+    xcrun -sdk "$sdk" metal -c "$SHADER" $min_flag -o "$TMPDIR/${name}.air"
     xcrun -sdk "$sdk" metallib "$TMPDIR/${name}.air" -o "$TMPDIR/${name}.metallib"
 
     echo "unsigned char ${var_name}[] = {" > "$OUTDIR/${name}.h"
@@ -24,10 +25,10 @@ generate() {
 
 mkdir -p "$OUTDIR"
 
-generate macosx macos
-generate iphoneos ios
-generate appletvos tvos
-generate iphonesimulator simulator
+generate macosx macos "-mmacosx-version-min=10.13"
+generate iphoneos ios "-mios-version-min=13.0"
+generate appletvos tvos "-mtvos-version-min=17.0"
+generate iphonesimulator simulator "-mios-simulator-version-min=13.0"
 
 rm -rf "$TMPDIR"
 echo "Done. All bitcode headers regenerated."
