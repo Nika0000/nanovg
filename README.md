@@ -117,11 +117,39 @@ Same pattern as above, just swap the header/define/create call:
 | Metal | [`nanovg_mtl.h`](/include/nanovg/backend/nanovg_mtl.h) | Obj-C, `src/metal/nanovg_mtl.m` | `nvgCreateMTL()` |
 | deko3d (Switch) | [`nanovg_dk.h`](/include/nanovg/backends/nanovg_dk.h) | `src/deko3d/*.cpp` | `nvgCreateDk()` |
 | PS4 | [`nanovg_ps4.h`](/include/nanovg/backends/nanovg_ps4.h) | `src/ps4/nanovg_ps4.c` | `nvgCreatePS4()` |
-| WebGPU | planned | — | — |
+| WebGPU | [`nanovg_wgpu.h`](/include/nanovg/nanovg_wgpu.h) | `NANOVG_WGPU_IMPLEMENTATION` | `nvgCreateWgpu()` |
 
 Vulkan needs `dynamicRendering` + `synchronization2` device features and
 `vkCmdBeginRendering`/`vkCmdEndRendering` around the frame (see `VKNVGCreateInfo`
 in the header). Everything else about drawing is identical across backends.
+
+WebGPU targets the standard C `webgpu.h` header (Dawn, wgpu-native, or Emscripten's
+`emdawnwebgpu`), not a specific implementation — include it before `nanovg_wgpu.h`.
+Begin a render pass with one color attachment and a depth-stencil attachment matching
+`WGPUNVGCreateInfo.depthStencilFormat` (stencil cleared to 0), call
+`nvgWgpuBindRenderPass()` before any draw calls, then proceed as usual.
+
+To build and run [`example_wgpu.c`](/examples/example_wgpu.c) against
+[Dawn](https://dawn.googlesource.com/dawn) (no depot_tools required):
+
+```bash
+git clone --depth 1 https://dawn.googlesource.com/dawn dawn
+cmake -B dawn/build -S dawn -DCMAKE_BUILD_TYPE=Release \
+    -DDAWN_FETCH_DEPENDENCIES=ON -DDAWN_BUILD_SAMPLES=OFF -DTINT_BUILD_TESTS=OFF \
+    -DDAWN_BUILD_NODE_BINDINGS=OFF -DDAWN_ENABLE_INSTALL=ON
+cmake --build dawn/build --target webgpu_dawn --config Release -j
+cmake --install dawn/build --prefix dawn/install --config Release
+
+cmake -B build -DCMAKE_BUILD_TYPE=Release -DNANOVG_BUILD_EXAMPLES=ON \
+    -DNANOVG_PLATFORM_WEBGPU=ON -DCMAKE_PREFIX_PATH="$PWD/dawn/install"
+cmake --build build --config Release --target example_wgpu
+
+./build/example_wgpu   # or build/Release/example_wgpu.exe on Windows
+```
+
+`Dawn_DIR`/`CMAKE_PREFIX_PATH` must point at a Dawn install tree so
+`find_package(Dawn)` can resolve the `dawn::webgpu_dawn` target; on wgpu-native
+or Emscripten set `NANOVG_WEBGPU_TARGET` to the appropriate target/link flags instead.
 
 ## API Reference
 

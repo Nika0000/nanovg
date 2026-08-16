@@ -6,6 +6,7 @@ option(NANOVG_BUILD_PLAYGROUND "Build the WebAssembly playground (requires Emscr
 option(NANOVG_PLATFORM_PS4 "Enable PS4 backend" OFF)
 option(NANOVG_PLATFORM_DEKO3D "Enable Nintendo Switch/deko3d backend" OFF)
 option(NANOVG_PLATFORM_METAL "Enable Metal backend" OFF)
+option(NANOVG_PLATFORM_WEBGPU "Enable WebGPU backend" OFF)
 option(NANOVG_FONTSTASH_STREAM "Enable font streaming" OFF)
 
 add_library(nanovg STATIC src/nanovg.c)
@@ -18,6 +19,7 @@ target_include_directories(nanovg PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/d3d11
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/metal
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/vulkan
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/wgpu
 )
 
 if(NANOVG_FONTSTASH_STREAM)
@@ -62,6 +64,21 @@ if(NANOVG_BUILD_EXAMPLES)
     endif()
 
     find_package(glfw3 QUIET)
+    if(NOT glfw3_FOUND)
+        include(FetchContent)
+        set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+        set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+        set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
+        set(GLFW_INSTALL OFF CACHE BOOL "" FORCE)
+        FetchContent_Declare(
+            glfw
+            GIT_REPOSITORY https://github.com/glfw/glfw.git
+            GIT_TAG 3.4
+            GIT_SHALLOW TRUE
+        )
+        FetchContent_MakeAvailable(glfw)
+        set(glfw3_FOUND TRUE)
+    endif()
     if(glfw3_FOUND)
         find_package(OpenGL REQUIRED)
 
@@ -120,6 +137,33 @@ if(NANOVG_BUILD_EXAMPLES)
                 target_compile_definitions(example_vulkan_min PRIVATE VK_USE_PLATFORM_XCB_KHR)
                 target_link_libraries(example_vulkan_min m X11::xcb)
             endif()
+        endif()
+    endif()
+
+    if(NANOVG_PLATFORM_WEBGPU)
+        if(NOT NANOVG_WEBGPU_TARGET)
+            find_package(Threads REQUIRED)
+            find_package(Dawn QUIET)
+            if(TARGET dawn::webgpu_dawn)
+                set(NANOVG_WEBGPU_TARGET dawn::webgpu_dawn)
+            endif()
+        endif()
+
+        if(NANOVG_WEBGPU_TARGET AND glfw3_FOUND)
+            add_executable(example_wgpu examples/example_wgpu.c ${NANOVG_EXAMPLE_COMMON})
+            target_include_directories(example_wgpu PRIVATE
+                ${CMAKE_CURRENT_SOURCE_DIR}/include/nanovg
+                ${CMAKE_CURRENT_SOURCE_DIR}/third_party
+                ${CMAKE_CURRENT_SOURCE_DIR}/examples
+                ${CMAKE_CURRENT_SOURCE_DIR}/shaders/wgpu
+            )
+            target_compile_definitions(example_wgpu PRIVATE NANOVG_WEBGPU)
+            target_link_libraries(example_wgpu nanovg glfw ${NANOVG_WEBGPU_TARGET})
+            if(UNIX)
+                target_link_libraries(example_wgpu m)
+            endif()
+        else()
+            message(STATUS "NANOVG_PLATFORM_WEBGPU is ON but no WebGPU target/glfw3 found (set NANOVG_WEBGPU_TARGET) - skipping example_wgpu")
         endif()
     endif()
 endif()
