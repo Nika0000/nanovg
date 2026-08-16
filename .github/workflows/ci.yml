@@ -86,7 +86,7 @@ jobs:
       - name: Build all examples
         run: cmake --build build --config Release
 
-  build-metal:
+  build-examples-metal:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v7
@@ -97,13 +97,16 @@ jobs:
       - name: Build
         run: cmake --build build --config Release
 
-  build-wgpu:
+  build-examples-wgpu:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
 
       - name: Install dependencies
-        run: sudo apt-get update && sudo apt-get install -y libglfw3-dev ninja-build
+        run: sudo apt-get update && sudo apt-get install -y libglfw3-dev ninja-build libxkbcommon-dev libwayland-dev libxinerama-dev libxcursor-dev libxi-dev libxrandr-dev
+
+      - name: Pin CMake below C++ module scanning enforcement
+        run: pip install "cmake==3.27.9"
 
       - name: Cache Dawn build
         uses: actions/cache@v4
@@ -118,7 +121,7 @@ jobs:
           fi
           cmake -B dawn/build -S dawn -G Ninja -DCMAKE_BUILD_TYPE=Release \
             -DDAWN_FETCH_DEPENDENCIES=ON -DDAWN_BUILD_SAMPLES=OFF -DTINT_BUILD_TESTS=OFF \
-            -DDAWN_BUILD_NODE_BINDINGS=OFF -DDAWN_ENABLE_INSTALL=ON
+            -DDAWN_BUILD_NODE_BINDINGS=OFF -DDAWN_ENABLE_INSTALL=ON -DCMAKE_CXX_SCAN_FOR_MODULES=OFF
           cmake --build dawn/build --target webgpu_dawn
           cmake --install dawn/build --prefix dawn/install
 
