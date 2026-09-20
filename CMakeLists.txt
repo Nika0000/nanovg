@@ -45,6 +45,18 @@ if(NANOVG_BUILD_PLAYGROUND)
     add_subdirectory(playground)
 endif()
 
+option(NANOVG_BUILD_TESTS "Build unit tests" OFF)
+
+if(NANOVG_BUILD_TESTS)
+    enable_testing()
+    add_executable(test_nanovg tests/test_nanovg.c)
+    target_link_libraries(test_nanovg PRIVATE nanovg)
+    if(UNIX)
+        target_link_libraries(test_nanovg PRIVATE m)
+    endif()
+    add_test(NAME nanovg_tests COMMAND test_nanovg)
+endif()
+
 if(NANOVG_BUILD_EXAMPLES)
     set(NANOVG_EXAMPLE_COMMON
         examples/demo.c
