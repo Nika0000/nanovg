@@ -159,6 +159,56 @@ enum NVGstencilFlags {
 	NVG_STENCIL_CLEAR   = 1 << 1,
 };
 
+typedef enum NVGfilterStatus {
+	NVG_FILTER_OK               = 0,
+	NVG_FILTER_INVALID_ARGUMENT = -1,
+	NVG_FILTER_OUT_OF_MEMORY    = -2,
+	NVG_FILTER_UPLOAD_FAILED    = -3
+} NVGfilterStatus;
+
+typedef enum NVGfilterType {
+	NVG_FILTER_GRAYSCALE,
+	NVG_FILTER_BRIGHTNESS_CONTRAST,
+	NVG_FILTER_BOX_BLUR,
+	NVG_FILTER_GAUSSIAN_BLUR,
+	NVG_FILTER_SHARPEN,
+	NVG_FILTER_UNSHARP_MASK,
+	NVG_FILTER_SOBEL,
+	NVG_FILTER_CONVOLUTION
+} NVGfilterType;
+
+typedef enum NVGfilterBorder {
+	NVG_FILTER_BORDER_CLAMP,
+	NVG_FILTER_BORDER_REPEAT,
+	NVG_FILTER_BORDER_MIRROR,
+	NVG_FILTER_BORDER_TRANSPARENT
+} NVGfilterBorder;
+
+/* RGBA8, top row first. stride is a nonnegative byte count; 0 means width*4.
+ * width must be <= INT_MAX/4. The caller owns data and
+ * must supply enough bytes for (height-1)*stride + width*4.
+ * premultiplied is 0 for straight alpha, 1 for premultiplied alpha. */
+typedef struct NVGpixelBuffer {
+	unsigned char* data;
+	int width, height;
+	int stride;
+	int premultiplied;
+} NVGpixelBuffer;
+
+typedef struct NVGfilter {
+	NVGfilterType type;
+	NVGfilterBorder border;
+	float amount;                  /* grayscale: [0,1]; sharpen/unsharp/Sobel: [0,10000] */
+	float brightness;              /* normalized RGB offset [-1,1] */
+	float contrast;                /* [0,10000], identity=1, pivot=0.5 */
+	float sigma;                   /* Gaussian/unsharp: (0,42], radius=ceil(3*sigma) */
+	int radiusX, radiusY;          /* box blur: [0,128] */
+	int kernelWidth, kernelHeight; /* convolution: odd, [1,31] */
+	const float* kernel;           /* read synchronously; row-major correlation */
+	float divisor;                 /* convolution: finite, abs >=1e-10; no auto-normalization */
+	float bias;                    /* convolution: finite normalized RGB offset, abs <=10000 */
+} NVGfilter;
+
 // Begin drawing a new frame
 // Calls to nanovg drawing API should be wrapped in nvgBeginFrame() & nvgEndFrame()
 // nvgBeginFrame() defines the size of the window to render to in relation currently
@@ -403,6 +453,32 @@ void nvgImageSize(NVGcontext* ctx, int image, int* w, int* h);
 
 // Deletes created image.
 void nvgDeleteImage(NVGcontext* ctx, int image);
+
+//
+// CPU image filters
+//
+
+/* Initializes default parameters: clamp, amount=1, contrast=1,
+ * sigma=1, box radii=1, divisor=1. Convolution requires a kernel. */
+NVGfilter nvgFilterInit(NVGfilterType type);
+
+/* Filters execute in order in encoded RGB space (no sRGB linearization).
+ * Blur filters premultiplied RGB and alpha; other filters preserve alpha.
+ * Float intermediates are clamped only when writing RGBA8.
+ * Source/destination dimensions must match; aliasing (including in-place)
+ * is supported. Destination is untouched on validation/allocation failure.
+ * Zero filters converts alpha representation or copies pixels.
+ * Output dimensions are unchanged: effects are clipped to the image bounds.
+ * Maximum chain length is 256. Buffers/descriptors must remain valid during
+ * the call. This API has no graphics-context dependency. */
+NVGfilterStatus nvgFilterRGBA(const NVGpixelBuffer* source, NVGpixelBuffer* destination, const NVGfilter* filters, int filterCount);
+
+/* Filters source pixels, then uploads an ordinary NanoVG image. outImage
+ * is set to 0 on failure. Output alpha representation follows imageFlags
+ * (NVG_IMAGE_PREMULTIPLIED). Free with nvgDeleteImage().
+ * Call on the graphics-context thread, preferably between frames.
+ * Does not retain source pixels or read back existing GPU images. */
+NVGfilterStatus nvgCreateFilteredImageRGBA(NVGcontext* ctx, const NVGpixelBuffer* source, int imageFlags, const NVGfilter* filters, int filterCount, int* outImage);
 
 //
 // Paints

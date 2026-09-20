@@ -16,10 +16,13 @@
 // 3. This notice may not be removed or altered from any source distribution.
 //
 
+#include <float.h>
+#include <limits.h>
 #include <math.h>
 #include <memory.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "nanovg.h"
 #define FONTSTASH_IMPLEMENTATION
@@ -69,6 +72,9 @@
 #define NVG_KAPPA90 0.5522847493f // Length proportional to radius of a cubic bezier handle for 90deg arcs.
 
 #define NVG_COUNTOF(arr) (sizeof(arr) / sizeof(0 [arr]))
+
+#define NVG_FILTER_MAX_RADIUS 128
+#define NVG_FILTER_MAX_KERNEL 31
 
 enum NVGcommands {
 	NVG_MOVETO   = 0,
@@ -806,6 +812,379 @@ void nvgImageSize(NVGcontext* ctx, int image, int* w, int* h) {
 
 void nvgDeleteImage(NVGcontext* ctx, int image) {
 	ctx->params.renderDeleteTexture(ctx->params.userPtr, image);
+}
+
+static int nvg__filterFinite(float v) { return v >= -FLT_MAX && v <= FLT_MAX; }
+
+NVGfilter nvgFilterInit(NVGfilterType type) {
+	NVGfilter f;
+	memset(&f, 0, sizeof(f));
+	f.type   = type;
+	f.border = NVG_FILTER_BORDER_CLAMP;
+	f.amount = f.contrast = f.sigma = f.divisor = 1;
+	f.radiusX = f.radiusY = 1;
+	return f;
+}
+
+static int nvg__filterBuffer(const NVGpixelBuffer* b, size_t* stride, size_t* count) {
+	size_t row, limit = (size_t) -1;
+
+	if (!b || !b->data || b->width <= 0 || b->height <= 0 ||
+	    b->width > INT_MAX / 4 || b->height > INT_MAX - 256 || b->stride < 0 ||
+	    (b->premultiplied != 0 && b->premultiplied != 1)) return 0;
+
+	if ((size_t) b->width > limit / 4) return 0;
+	row     = (size_t) b->width * 4;
+	*stride = b->stride ? (size_t) b->stride : row;
+	if (*stride < row || (size_t) (b->height - 1) > (limit - row) / *stride || (size_t) b->height > limit / row / sizeof(float)) return 0;
+	*count = row * (size_t) b->height;
+	return 1;
+}
+
+// Bound individual parameters; reject non-finite stage results before commit.
+static int nvg__filterValid(const NVGfilter* f) {
+	int i;
+	if (f->border < NVG_FILTER_BORDER_CLAMP || f->border > NVG_FILTER_BORDER_TRANSPARENT)
+		return 0;
+	switch (f->type) {
+		case NVG_FILTER_GRAYSCALE:
+			return nvg__filterFinite(f->amount) && f->amount >= 0 && f->amount <= 1;
+		case NVG_FILTER_BRIGHTNESS_CONTRAST:
+			return nvg__filterFinite(f->brightness) && fabsf(f->brightness) <= 1 &&
+			       nvg__filterFinite(f->contrast) && f->contrast >= 0 && f->contrast <= 10000;
+		case NVG_FILTER_BOX_BLUR:
+			return f->radiusX >= 0 && f->radiusX <= NVG_FILTER_MAX_RADIUS &&
+			       f->radiusY >= 0 && f->radiusY <= NVG_FILTER_MAX_RADIUS;
+		case NVG_FILTER_UNSHARP_MASK:
+			if (!nvg__filterFinite(f->amount) || f->amount < 0 || f->amount > 10000) return 0;
+			// fall through
+		case NVG_FILTER_GAUSSIAN_BLUR:
+			return nvg__filterFinite(f->sigma) && f->sigma > 0 && f->sigma <= 42;
+		case NVG_FILTER_SHARPEN:
+		case NVG_FILTER_SOBEL:
+			return nvg__filterFinite(f->amount) && f->amount >= 0 && f->amount <= 10000;
+		case NVG_FILTER_CONVOLUTION:
+			if (!f->kernel || f->kernelWidth < 1 || f->kernelWidth > NVG_FILTER_MAX_KERNEL ||
+			    f->kernelHeight < 1 || f->kernelHeight > NVG_FILTER_MAX_KERNEL ||
+			    !(f->kernelWidth & 1) || !(f->kernelHeight & 1) ||
+			    !nvg__filterFinite(f->divisor) || fabsf(f->divisor) < 1e-10f ||
+			    !nvg__filterFinite(f->bias) || fabsf(f->bias) > 10000) return 0;
+
+			for (i = 0; i < f->kernelWidth * f->kernelHeight; i++)
+				if (!nvg__filterFinite(f->kernel[i]) || fabsf(f->kernel[i]) > 10000) return 0;
+			return 1;
+		default:
+			return 0;
+	}
+}
+
+static int nvg__filterCoord(int v, int n, NVGfilterBorder border) {
+	if (v >= 0 && v < n) return v;
+	if (border == NVG_FILTER_BORDER_TRANSPARENT) return -1;
+	if (border == NVG_FILTER_BORDER_CLAMP) return v < 0 ? 0 : n - 1;
+	if (border == NVG_FILTER_BORDER_REPEAT) {
+		v %= n;
+		return v < 0 ? v + n : v;
+	}
+
+	// Reflection repeats the edge pixel. Avoid 2*n integer overflow.
+	{
+		long long period = (long long) n * 2;
+		long long p      = (long long) v % period;
+		if (p < 0) p += period;
+		return (int) (p < n ? p : period - 1 - p);
+	}
+}
+
+static const float* nvg__filterSample(const float* src, int w, int h, int x, int y, NVGfilterBorder border) {
+	static const float zero[4] = {0, 0, 0, 0};
+
+	x = nvg__filterCoord(x, w, border);
+	y = nvg__filterCoord(y, h, border);
+
+	return x < 0 || y < 0 ? zero : src + ((size_t) y * w + x) * 4;
+}
+
+static float nvg__filterStraight(const float* p, int c) {
+	return p[3] > 0 ? p[c] / p[3] : 0;
+}
+
+static void nvg__filterPass(const float* src, float* dst, int w, int h, const float* weights, int radius, int vertical, NVGfilterBorder border) {
+	int x, y, c, k;
+
+	for (y = 0; y < h; y++) {
+		for (x = 0; x < w; x++) {
+			float* d      = dst + ((size_t) y * w + x) * 4;
+			double sum[4] = {0, 0, 0, 0};
+
+			for (k = -radius; k <= radius; k++) {
+				const float* p = nvg__filterSample(src, w, h, x + (vertical ? 0 : k), y + (vertical ? k : 0), border);
+
+				for (c = 0; c < 4; c++)
+					sum[c] += (double) p[c] * weights[k + radius];
+			}
+
+			for (c = 0; c < 4; c++) d[c] = (float) sum[c];
+		}
+	}
+}
+
+// Sliding-window box pass: work per pixel is independent of radius.
+static void nvg__filterBoxPass(const float* src, float* dst, int w, int h, int radius, int vertical, NVGfilterBorder border) {
+	int line, pos, k, c;
+	int lines = vertical ? w : h, length = vertical ? h : w;
+	double scale = 1.0 / (2 * radius + 1);
+
+	for (line = 0; line < lines; line++) {
+		double sum[4] = {0, 0, 0, 0};
+
+		for (k = -radius; k <= radius; k++) {
+			const float* p = nvg__filterSample(src, w, h, vertical ? line : k, vertical ? k : line, border);
+			for (c = 0; c < 4; c++) sum[c] += p[c];
+		}
+		for (pos = 0; pos < length; pos++) {
+			float* d = dst + ((size_t) (vertical ? pos : line) * w + (vertical ? line : pos)) * 4;
+			const float *a, *b;
+
+			for (c = 0; c < 4; c++)
+				d[c] = (float) (sum[c] * scale);
+
+			a = nvg__filterSample(src, w, h, vertical ? line : pos - radius, vertical ? pos - radius : line, border);
+			b = nvg__filterSample(src, w, h, vertical ? line : pos + radius + 1, vertical ? pos + radius + 1 : line, border);
+
+			for (c = 0; c < 4; c++)
+				sum[c] += (double) b[c] - a[c];
+		}
+	}
+}
+
+static void nvg__filterBlur(const float* src, float* dst, float* tmp, int w, int h, const NVGfilter* f) {
+	if (f->type == NVG_FILTER_BOX_BLUR) {
+		nvg__filterBoxPass(src, tmp, w, h, f->radiusX, 0, f->border);
+		nvg__filterBoxPass(tmp, dst, w, h, f->radiusY, 1, f->border);
+	} else {
+		float weights[2 * NVG_FILTER_MAX_RADIUS + 1];
+		int k, r = (int) ceilf(3 * f->sigma);
+		double sum = 0, sigma = f->sigma;
+
+		for (k = -r; k <= r; k++) {
+			weights[k + r] = (float) exp(-0.5 * ((double) k / sigma) * ((double) k / sigma));
+			sum += weights[k + r];
+		}
+
+		for (k = 0; k <= 2 * r; k++)
+			weights[k] = (float) (weights[k] / sum);
+
+		nvg__filterPass(src, tmp, w, h, weights, r, 0, f->border);
+		nvg__filterPass(tmp, dst, w, h, weights, r, 1, f->border);
+	}
+}
+
+static void nvg__filterApply(const float* src, float* dst, float* tmp, int w, int h, const NVGfilter* f) {
+	int x, y, c, kx, ky;
+	size_t i, count = (size_t) w * h * 4;
+
+	if (f->type == NVG_FILTER_BOX_BLUR || f->type == NVG_FILTER_GAUSSIAN_BLUR || f->type == NVG_FILTER_UNSHARP_MASK) {
+		nvg__filterBlur(src, dst, tmp, w, h, f);
+
+		if (f->type == NVG_FILTER_UNSHARP_MASK) {
+			for (i = 0; i < count; i += 4) {
+				for (c = 0; c < 3; c++) {
+					float s = nvg__filterStraight(src + i, c), b = nvg__filterStraight(dst + i, c);
+					dst[i + c] = (s + f->amount * (s - b)) * src[i + 3];
+				}
+				dst[i + 3] = src[i + 3];
+			}
+		}
+		return;
+	}
+
+	for (y = 0; y < h; y++) {
+		for (x = 0; x < w; x++) {
+			const float* s = src + ((size_t) y * w + x) * 4;
+			float* d       = dst + ((size_t) y * w + x) * 4;
+
+			float rgb[3];
+			for (c = 0; c < 3; c++)
+				rgb[c] = nvg__filterStraight(s, c);
+
+			d[3] = s[3];
+
+			if (f->type == NVG_FILTER_GRAYSCALE) {
+				float l = .2126f * rgb[0] + .7152f * rgb[1] + .0722f * rgb[2];
+
+				for (c = 0; c < 3; c++)
+					rgb[c] += f->amount * (l - rgb[c]);
+			} else if (f->type == NVG_FILTER_BRIGHTNESS_CONTRAST) {
+				for (c = 0; c < 3; c++)
+					rgb[c] = (rgb[c] - .5f) * f->contrast + .5f + f->brightness;
+			} else if (f->type == NVG_FILTER_SOBEL) {
+				double gx = 0, gy = 0;
+
+				for (ky = -1; ky <= 1; ky++) {
+					for (kx = -1; kx <= 1; kx++) {
+						const float* p = nvg__filterSample(src, w, h, x + kx, y + ky, f->border);
+
+						double l = .2126 * nvg__filterStraight(p, 0) + .7152 * nvg__filterStraight(p, 1) + .0722 * nvg__filterStraight(p, 2);
+
+						gx += l * kx * (ky == 0 ? 2 : 1);
+						gy += l * ky * (kx == 0 ? 2 : 1);
+					}
+				}
+				rgb[0] = rgb[1] = rgb[2] = (float) (sqrt(gx * gx + gy * gy) * f->amount);
+			} else {
+				int kw = f->type == NVG_FILTER_SHARPEN ? 3 : f->kernelWidth;
+				int kh = f->type == NVG_FILTER_SHARPEN ? 3 : f->kernelHeight;
+
+				double sum[3] = {0, 0, 0};
+
+				for (ky = 0; ky < kh; ky++)
+					for (kx = 0; kx < kw; kx++) {
+						float weight;
+						const float* p = nvg__filterSample(src, w, h, x + kx - kw / 2,
+						                                   y + ky - kh / 2, f->border);
+						if (f->type == NVG_FILTER_SHARPEN)
+							weight = kx == 1 && ky == 1 ? 1 + 4 * f->amount : ((kx == 1 || ky == 1) ? -f->amount : 0);
+						else
+							weight = f->kernel[ky * kw + kx];
+						for (c = 0; c < 3; c++) sum[c] += (double) nvg__filterStraight(p, c) * weight;
+					}
+
+				for (c = 0; c < 3; c++)
+					rgb[c] = f->type == NVG_FILTER_SHARPEN ? (float) sum[c] : (float) (sum[c] / f->divisor + f->bias);
+			}
+
+			for (c = 0; c < 3; c++)
+				d[c] = rgb[c] * s[3];
+		}
+	}
+}
+
+NVGfilterStatus nvgFilterRGBA(const NVGpixelBuffer* source, NVGpixelBuffer* destination, const NVGfilter* filters, int filterCount) {
+	size_t ss, ds, count, dc, i;
+	int x, y, c, stage;
+	float *a, *b, *tmp = NULL;
+	int needsTmp = 0;
+
+	if (!nvg__filterBuffer(source, &ss, &count) || !nvg__filterBuffer(destination, &ds, &dc) ||
+	    source->width != destination->width || source->height != destination->height ||
+	    filterCount < 0 || filterCount > 256 || (filterCount && !filters))
+		return NVG_FILTER_INVALID_ARGUMENT;
+
+	for (stage = 0; stage < filterCount; stage++) {
+		if (!nvg__filterValid(filters + stage)) return NVG_FILTER_INVALID_ARGUMENT;
+		if (filters[stage].type == NVG_FILTER_BOX_BLUR ||
+		    filters[stage].type == NVG_FILTER_GAUSSIAN_BLUR ||
+		    filters[stage].type == NVG_FILTER_UNSHARP_MASK) needsTmp = 1;
+	}
+
+	if (filterCount == 0 && source->premultiplied == destination->premultiplied) {
+		unsigned char* copy = (unsigned char*) malloc(count);
+		size_t row          = (size_t) source->width * 4;
+
+		if (!copy)
+			return NVG_FILTER_OUT_OF_MEMORY;
+
+		for (y = 0; y < source->height; y++)
+			memcpy(copy + (size_t) y * row, source->data + (size_t) y * ss, row);
+
+		for (y = 0; y < destination->height; y++)
+			memcpy(destination->data + (size_t) y * ds, copy + (size_t) y * row, row);
+
+		free(copy);
+		return NVG_FILTER_OK;
+	}
+
+	a = (float*) malloc(count * sizeof(float));
+	b = (float*) malloc(count * sizeof(float));
+	if (needsTmp)
+		tmp = (float*) malloc(count * sizeof(float));
+
+	if (!a || !b || (needsTmp && !tmp)) {
+		free(a);
+		free(b);
+		free(tmp);
+		return NVG_FILTER_OUT_OF_MEMORY;
+	}
+
+	for (y = 0; y < source->height; y++) {
+		for (x = 0; x < source->width; x++) {
+			const unsigned char* p = source->data + (size_t) y * ss + (size_t) x * 4;
+			float* d               = a + ((size_t) y * source->width + x) * 4;
+			d[3]                   = p[3] / 255.0f;
+			for (c = 0; c < 3; c++)
+				d[c] = p[c] / 255.0f * (source->premultiplied ? 1 : d[3]);
+		}
+	}
+
+	for (stage = 0; stage < filterCount; stage++) {
+		float* swap;
+
+		nvg__filterApply(a, b, tmp, source->width, source->height, filters + stage);
+
+		for (i = 0; i < count; i++) {
+			if (!nvg__filterFinite(b[i])) {
+				free(a);
+				free(b);
+				free(tmp);
+				return NVG_FILTER_INVALID_ARGUMENT;
+			}
+		}
+
+		swap = a;
+		a    = b;
+		b    = swap;
+	}
+
+	for (y = 0; y < destination->height; y++) {
+		for (x = 0; x < destination->width; x++) {
+			const float* s   = a + ((size_t) y * destination->width + x) * 4;
+			unsigned char* p = destination->data + (size_t) y * ds + (size_t) x * 4;
+			float alpha      = nvg__clampf(s[3], 0.0f, 1.0f);
+
+			for (c = 0; c < 3; c++) {
+				float v = nvg__clampf(nvg__filterStraight(s, c), 0.0f, 1.0f);
+				if (destination->premultiplied) v *= alpha;
+				p[c] = (unsigned char) (v * 255 + .5f);
+			}
+
+			p[3] = (unsigned char) (alpha * 255 + .5f);
+		}
+	}
+	free(a);
+	free(b);
+	free(tmp);
+	return NVG_FILTER_OK;
+}
+
+NVGfilterStatus nvgCreateFilteredImageRGBA(NVGcontext* ctx, const NVGpixelBuffer* source, int imageFlags, const NVGfilter* filters, int filterCount, int* outImage) {
+	NVGpixelBuffer destination;
+	NVGfilterStatus status;
+	size_t stride, count;
+
+	if (!outImage)
+		return NVG_FILTER_INVALID_ARGUMENT;
+
+	*outImage = 0;
+	if (!ctx || !nvg__filterBuffer(source, &stride, &count))
+		return NVG_FILTER_INVALID_ARGUMENT;
+
+	destination               = *source;
+	destination.stride        = 0;
+	destination.premultiplied = (imageFlags & NVG_IMAGE_PREMULTIPLIED) != 0;
+	destination.data          = (unsigned char*) malloc(count);
+
+	if (!destination.data)
+		return NVG_FILTER_OUT_OF_MEMORY;
+
+	status = nvgFilterRGBA(source, &destination, filters, filterCount);
+	if (status == NVG_FILTER_OK) {
+		*outImage = nvgCreateImageRGBA(ctx, source->width, source->height, imageFlags, destination.data);
+		if (*outImage == 0)
+			status = NVG_FILTER_UPLOAD_FAILED;
+	}
+	free(destination.data);
+	return status;
 }
 
 NVGpaint nvgLinearGradient(NVGcontext* ctx,

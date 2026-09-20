@@ -61,6 +61,18 @@ if(NANOVG_BUILD_EXAMPLES)
         )
         target_compile_definitions(example_d3d11 PRIVATE NANOVG_D3D11)
         target_link_libraries(example_d3d11 nanovg d3d11 dxguid)
+
+        add_executable(example_filters examples/example_filters.c)
+        target_link_libraries(example_filters PRIVATE nanovg d3d11 dxguid)
+        add_custom_command(TARGET example_filters POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:example_filters>/filter-assets"
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${CMAKE_CURRENT_SOURCE_DIR}/examples/Roboto-Regular.ttf"
+                "${CMAKE_CURRENT_SOURCE_DIR}/examples/images/image1.jpg"
+                "$<TARGET_FILE_DIR:example_filters>/filter-assets"
+            VERBATIM
+        )
+
     endif()
 
     find_package(glfw3 QUIET)
