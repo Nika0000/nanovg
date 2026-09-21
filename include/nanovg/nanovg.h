@@ -480,6 +480,16 @@ NVGfilterStatus nvgFilterRGBA(const NVGpixelBuffer* source, NVGpixelBuffer* dest
  * Does not retain source pixels or read back existing GPU images. */
 NVGfilterStatus nvgCreateFilteredImageRGBA(NVGcontext* ctx, const NVGpixelBuffer* source, int imageFlags, const NVGfilter* filters, int filterCount, int* outImage);
 
+/* Decodes encoded image data, filters the resulting RGBA pixels, and uploads
+ * an ordinary NanoVG image. Temporary decoded pixels are released before this
+ * function returns. Returns 0 if decoding, filtering, or uploading fails. */
+int nvgCreateFilteredImage(NVGcontext* ctx, const char* filename, int imageFlags, const NVGfilter* filters, int filterCount);
+
+/* Decodes encoded image data from the specified memory buffer, filters the
+ * resulting RGBA pixels, and uploads an ordinary NanoVG image. The input data
+ * is not retained. Returns 0 if decoding, filtering, or uploading fails. */
+int nvgCreateFilteredImageMem(NVGcontext* ctx, int imageFlags, const unsigned char* data, int ndata, const NVGfilter* filters, int filterCount);
+
 //
 // Paints
 //

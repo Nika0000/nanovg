@@ -1187,6 +1187,52 @@ NVGfilterStatus nvgCreateFilteredImageRGBA(NVGcontext* ctx, const NVGpixelBuffer
 	return status;
 }
 
+#ifndef NVG_NO_STB
+int nvgCreateFilteredImage(NVGcontext* ctx, const char* filename, int imageFlags, const NVGfilter* filters, int filterCount) {
+	NVGpixelBuffer source;
+	unsigned char* pixels;
+	int width, height, channels, image = 0;
+
+	if (!ctx || !filename)
+		return 0;
+
+	stbi_set_unpremultiply_on_load(1);
+	stbi_convert_iphone_png_to_rgb(1);
+	pixels = stbi_load(filename, &width, &height, &channels, 4);
+	if (!pixels)
+		return 0;
+
+	memset(&source, 0, sizeof(source));
+	source.data   = pixels;
+	source.width  = width;
+	source.height = height;
+	nvgCreateFilteredImageRGBA(ctx, &source, imageFlags, filters, filterCount, &image);
+	stbi_image_free(pixels);
+	return image;
+}
+
+int nvgCreateFilteredImageMem(NVGcontext* ctx, int imageFlags, const unsigned char* data, int ndata, const NVGfilter* filters, int filterCount) {
+	NVGpixelBuffer source;
+	unsigned char* pixels;
+	int width, height, channels, image = 0;
+
+	if (!ctx || !data || ndata <= 0)
+		return 0;
+
+	pixels = stbi_load_from_memory(data, ndata, &width, &height, &channels, 4);
+	if (!pixels)
+		return 0;
+
+	memset(&source, 0, sizeof(source));
+	source.data   = pixels;
+	source.width  = width;
+	source.height = height;
+	nvgCreateFilteredImageRGBA(ctx, &source, imageFlags, filters, filterCount, &image);
+	stbi_image_free(pixels);
+	return image;
+}
+#endif
+
 NVGpaint nvgLinearGradient(NVGcontext* ctx,
                            float sx, float sy, float ex, float ey,
                            NVGcolor icol, NVGcolor ocol) {
