@@ -19,6 +19,11 @@
 #ifndef NANOVG_H
 #define NANOVG_H
 
+#define NVG_VERSION_MAJOR 0        // x-release-please-major
+#define NVG_VERSION_MINOR 1        // x-release-please-minor
+#define NVG_VERSION_PATCH 0        // x-release-please-patch
+#define NVG_VERSION_STRING "0.1.0" // x-release-please-version
+
 #ifdef __cplusplus
 extern "C" {
 #endif

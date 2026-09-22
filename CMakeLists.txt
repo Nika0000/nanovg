@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.15)
-project(nanovg C CXX)
+project(nanovg VERSION 0.1.0 LANGUAGES C CXX) # x-release-please-version
 
 option(NANOVG_BUILD_EXAMPLES "Build example programs" OFF)
 
