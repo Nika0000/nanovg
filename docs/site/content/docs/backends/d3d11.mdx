@@ -28,9 +28,29 @@ The device must outlive the NanoVG context.
 
 Before `nvgBeginFrame()`:
 
-1. Bind the color render-target view and depth-stencil view.
-2. Set a viewport matching the target.
-3. Clear color as needed and clear stencil to zero.
+<Steps>
+<Step>
+
+### Bind the target
+
+Bind the color render-target view and depth-stencil view.
+
+</Step>
+<Step>
+
+### Set the viewport
+
+Use a viewport matching the target.
+
+</Step>
+<Step>
+
+### Clear the target
+
+Clear color as needed and clear stencil to zero.
+
+</Step>
+</Steps>
 
 Then use the shared NanoVG frame lifecycle. The complete Win32 device, swap-chain, resize, and presentation flow is in `examples/example_d3d11.c`.
 

@@ -49,6 +49,24 @@
   color: #ef4444;
   white-space: pre-wrap;
 }
+.live-example-loading {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.live-example-spinner {
+  width: 1rem;
+  height: 1rem;
+  flex: none;
+  color: var(--color-fd-primary);
+  animation: live-example-spin 0.8s linear infinite;
+}
+@keyframes live-example-spin {
+  to { transform: rotate(360deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .live-example-spinner { animation-duration: 1.8s; }
+}
 
 /* Code header: filename, run/stop/reset/copy buttons */
 .live-example-code-header {
@@ -95,7 +113,7 @@
   color: var(--color-fd-foreground);
 }
 .live-example-actions button:disabled { cursor: default; opacity: 0.45; }
-.live-example button:focus-visible, .live-example textarea:focus-visible {
+.live-example button:focus-visible {
   outline: 2px solid var(--color-fd-primary);
   outline-offset: -2px;
 }
@@ -154,6 +172,11 @@
   tab-size: 4;
   white-space: pre;
   overflow: auto;
+}
+.live-example-editor textarea:focus,
+.live-example-editor textarea:focus-visible {
+  outline: none;
+  box-shadow: none;
 }
 .live-example-editor textarea::selection {
   background: color-mix(in srgb, var(--color-fd-primary) 30%, transparent);

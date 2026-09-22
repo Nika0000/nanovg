@@ -47,12 +47,50 @@ void drawNanoVG(NVGcontext* vg, int windowWidth, int windowHeight, int framebuff
 
 A typical host frame performs these operations in order:
 
-1. Make the graphics context current and bind the destination framebuffer.
-2. Set the viewport and clear color, depth, and stencil as needed.
-3. Call `nvgBeginFrame()`.
-4. Issue NanoVG drawing commands.
-5. Call `nvgEndFrame()` to flush the batched work.
-6. Present or swap the host application's render target.
+<Steps>
+<Step>
+
+### Bind the destination
+
+Make the graphics context current and bind the destination framebuffer.
+
+</Step>
+<Step>
+
+### Prepare the target
+
+Set the viewport and clear color, depth, and stencil as needed.
+
+</Step>
+<Step>
+
+### Begin the frame
+
+Call `nvgBeginFrame()` with the logical dimensions and pixel ratio.
+
+</Step>
+<Step>
+
+### Draw
+
+Issue NanoVG drawing commands.
+
+</Step>
+<Step>
+
+### End the frame
+
+Call `nvgEndFrame()` to flush the batched work.
+
+</Step>
+<Step>
+
+### Present
+
+Present or swap the host application's render target.
+
+</Step>
+</Steps>
 
 Keep all NanoVG drawing commands inside the frame pair. Use logical window coordinates; the pixel ratio lets NanoVG scale antialiasing and font rendering for high-density displays.
 

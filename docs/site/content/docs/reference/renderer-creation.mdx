@@ -189,11 +189,43 @@ The PlayStation 4 files in this repository expose backend shader data, but `nano
 
 Use this general shutdown order:
 
-1. End or cancel any active NanoVG frame.
-2. Ensure submitted GPU work no longer uses NanoVG-owned resources as required by the native API.
-3. Delete backend-specific framebuffer helpers.
-4. Call the destructor matching the constructor.
-5. Destroy the native layer, renderer, queue, device, or graphics context.
+<Steps>
+<Step>
+
+### End the frame
+
+End or cancel any active NanoVG frame.
+
+</Step>
+<Step>
+
+### Wait for GPU work
+
+Ensure submitted GPU work no longer uses NanoVG-owned resources as required by the native API.
+
+</Step>
+<Step>
+
+### Delete framebuffer helpers
+
+Delete backend-specific framebuffer helpers.
+
+</Step>
+<Step>
+
+### Delete the NanoVG context
+
+Call the destructor matching the constructor.
+
+</Step>
+<Step>
+
+### Destroy native objects
+
+Destroy the native layer, renderer, queue, device, or graphics context.
+
+</Step>
+</Steps>
 
 Do not call `nvgDeleteInternal()` for a context returned by a public backend constructor. The matching public destructor performs that operation and communicates which backend owns the context.
 

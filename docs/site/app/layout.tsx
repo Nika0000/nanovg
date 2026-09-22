@@ -17,6 +17,7 @@ export default function Layout({ children }: { children: ReactNode }) {
         <RootProvider search={{ options: { type: 'static' } }}>
           <DocsLayout
             tree={source.pageTree}
+            githubUrl="https://github.com/Nika0000/nanovg"
             nav={{ title: 'NanoVG', url: '/' }}
             searchToggle={{ enabled: true }}
           >

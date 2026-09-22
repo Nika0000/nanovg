@@ -28,5 +28,3 @@ Use root-relative links for site pages, such as `/guides/images`. The production
 Use the globally available `<LiveExample code={source} />` component in MDX. Supply a complete C++17 translation unit that includes `nanovg.h` and defines `void draw(NVGcontext* vg, float width, float height, float time)`. Includes, helper functions, loops, and standard-library types are compiled in the browser. The host manages the context and frame lifecycle.
 
 The `sans` font, `/Roboto-Regular.ttf`, and `/image1.jpg` are bundled. Run compiles the example; Stop terminates its workers; Reset restores the original source. The first run downloads the compiler and may reload once to enable the isolation required on GitHub Pages. Sources and compiler assets are staged automatically by `npm run dev` and `npm run build`. No local Emscripten installation is needed.
-
-Examples should use exact public names and state prerequisites, ownership, failure results, and cleanup. Update `DOCUMENTATION_PLAN.md` when a planned page is completed or the information architecture changes.

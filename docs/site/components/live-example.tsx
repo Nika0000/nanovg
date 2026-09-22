@@ -1,6 +1,6 @@
 'use client';
 
-import { Play, Square, RotateCcw, ChevronDown, ChevronRight, Copy, Check } from 'lucide-react';
+import { Play, Square, RotateCcw, ChevronDown, ChevronRight, Copy, Check, LoaderCircle } from 'lucide-react';
 import { useEffect, useId, useRef, useState, useCallback } from 'react';
 import { createHighlighterCoreSync } from 'shiki/core';
 import { createJavaScriptRegexEngine } from 'shiki/engine/javascript';
@@ -152,7 +152,14 @@ export function LiveExample({ code, title = 'main.cpp', width = 640, height = 24
         )}
         {showOverlay && (
           <div className="live-example-overlay" role="status" aria-live="polite">
-            {error ? <span className="live-example-overlay-error">{error}</span> : <span>{status}</span>}
+            {error ? (
+              <span className="live-example-overlay-error">{error}</span>
+            ) : (
+              <span className="live-example-loading">
+                <LoaderCircle className="live-example-spinner" aria-hidden="true" />
+                <span>{status}</span>
+              </span>
+            )}
           </div>
         )}
       </div>

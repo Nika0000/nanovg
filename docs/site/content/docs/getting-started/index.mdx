@@ -5,9 +5,29 @@ description: Add NanoVG to a project, select a renderer, and draw your first fra
 
 NanoVG provides one drawing API over several graphics backends. A basic integration has three parts:
 
-1. Build and link the core `nanovg` library.
-2. Initialize one renderer backend and create an `NVGcontext`.
-3. Draw between `nvgBeginFrame()` and `nvgEndFrame()` on every frame.
+<Steps>
+<Step>
+
+### Build and link the core library
+
+Add the `nanovg` target to the host application.
+
+</Step>
+<Step>
+
+### Initialize a renderer
+
+Create an `NVGcontext` with the backend used by the host application.
+
+</Step>
+<Step>
+
+### Draw each frame
+
+Issue drawing commands between `nvgBeginFrame()` and `nvgEndFrame()`.
+
+</Step>
+</Steps>
 
 ## Recommended path
 

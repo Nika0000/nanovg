@@ -4,19 +4,21 @@ description: Draw antialiased vector graphics with NanoVG across desktop, mobile
 ---
 
 import { welcomeExample } from "@/lib/live-examples";
+import { Callout } from "fumadocs-ui/components/callout";
 
 NanoVG is a small C library for drawing antialiased vector graphics. Its immediate-mode API is modeled after the HTML5 Canvas API and is suited to user interfaces, tools, graphs, and other dynamic 2D drawing.
 
 This repository brings the shared NanoVG drawing API together with OpenGL, OpenGL ES, Direct3D 11, Vulkan, Metal, WebGPU, deko3d, and PlayStation 4 renderer implementations. It also includes native examples and editable C++ previews throughout these docs.
 
+<Callout type="warn" title="Work in progress">
+  NanoVG and this documentation are under active development. Some renderer backends may be incomplete or may not work as expected on every platform.
+</Callout>
+
 <LiveExample code={welcomeExample} height={400} defaultCollapsed />
 
 ## Start here
 
-- [Install NanoVG](/getting-started/installation) in an existing CMake project.
-- [Draw your first frame](/getting-started/first-frame) and learn the frame lifecycle.
-- [Choose a renderer](/getting-started/choosing-a-renderer) for your graphics API and platform.
-- [Build the examples](/getting-started/examples) to verify a development environment.
+<WelcomeActions />
 
 ## The drawing model
 

@@ -7,12 +7,50 @@ description: Diagnose common NanoVG rendering, text, image, state, and build pro
 
 Check the integration in this order:
 
-1. The renderer create function returned a non-null `NVGcontext`.
-2. The graphics context, device, queue, or command buffer is valid on the calling thread.
-3. The intended render target and viewport are active.
-4. The target has a stencil buffer where required, and stencil was cleared.
-5. Every drawing call occurs between `nvgBeginFrame()` and `nvgEndFrame()`.
-6. The host presents the target after `nvgEndFrame()`.
+<Steps>
+<Step>
+
+### Check context creation
+
+The renderer create function must return a non-null `NVGcontext`.
+
+</Step>
+<Step>
+
+### Check the graphics objects
+
+The graphics context, device, queue, or command buffer must be valid on the calling thread.
+
+</Step>
+<Step>
+
+### Check the render target
+
+The intended render target and viewport must be active.
+
+</Step>
+<Step>
+
+### Check stencil storage
+
+The target must have a stencil buffer where required, and stencil must be cleared.
+
+</Step>
+<Step>
+
+### Check the frame boundary
+
+Every drawing call must occur between `nvgBeginFrame()` and `nvgEndFrame()`.
+
+</Step>
+<Step>
+
+### Check presentation
+
+The host must present the target after `nvgEndFrame()`.
+
+</Step>
+</Steps>
 
 For OpenGL, add `NVG_DEBUG` when creating the context and inspect graphics API errors and debug output.
 

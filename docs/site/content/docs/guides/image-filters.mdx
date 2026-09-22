@@ -1,5 +1,5 @@
 ---
-title: CPU image filters
+title: Image filters
 description: Process RGBA8 pixels through filter chains and optionally upload the result as a NanoVG image.
 ---
 
@@ -92,7 +92,7 @@ The API processes caller-supplied pixels. It does not read back an existing Nano
 
 On Windows, build the Direct3D 11 comparison program:
 
-```powershell
+```sh
 cmake -S . -B build/filter-demo -DNANOVG_BUILD_EXAMPLES=ON
 cmake --build build/filter-demo --config Release --target example_filters
 .\build\filter-demo\Release\example_filters.exe

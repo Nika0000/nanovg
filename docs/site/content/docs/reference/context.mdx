@@ -71,11 +71,43 @@ Use logical dimensions for the width and height. Passing framebuffer dimensions 
 
 At the start of every frame, NanoVG:
 
-1. Clears the saved-state stack.
-2. Creates one initial state and resets it to defaults.
-3. Updates tessellation tolerances for the device pixel ratio.
-4. Notifies the renderer of the logical viewport and ratio.
-5. Resets per-frame draw statistics and font-texture dirty tracking.
+<Steps>
+<Step>
+
+### Clear saved state
+
+NanoVG clears the saved-state stack.
+
+</Step>
+<Step>
+
+### Create the initial state
+
+NanoVG creates one state and resets it to defaults.
+
+</Step>
+<Step>
+
+### Update tolerances
+
+NanoVG updates tessellation tolerances for the device pixel ratio.
+
+</Step>
+<Step>
+
+### Update the renderer
+
+NanoVG notifies the renderer of the logical viewport and ratio.
+
+</Step>
+<Step>
+
+### Reset frame tracking
+
+NanoVG resets per-frame draw statistics and font-texture dirty tracking.
+
+</Step>
+</Steps>
 
 State from the previous frame therefore does not carry into the new frame. Set custom transforms, clipping, paints, alpha, compositing, and text styles again where required.
 

@@ -7,13 +7,63 @@ Public drawing APIs begin in `include/nanovg/nanovg.h` and are implemented by `s
 
 ## Checklist
 
-1. Add or update declarations and comments in `nanovg.h`.
-2. Implement portable behavior in `src/nanovg.c` or the relevant backend.
-3. Add focused tests for validation, state, ownership, and failure behavior.
-4. Check every renderer callback or structure affected by the change.
-5. Run `npm run build` in `docs/site` to stage the updated public header and implementation for live examples.
-6. Update or add a live example if the change is user-facing.
-7. Update the relevant guide and API-reference page.
-8. Run core tests, affected examples, and docs checks.
+<Steps>
+<Step>
+
+### Update the public API
+
+Add or update declarations and comments in `nanovg.h`.
+
+</Step>
+<Step>
+
+### Implement the behavior
+
+Implement portable behavior in `src/nanovg.c` or the relevant backend.
+
+</Step>
+<Step>
+
+### Add focused tests
+
+Cover validation, state, ownership, and failure behavior.
+
+</Step>
+<Step>
+
+### Check renderer integration
+
+Review every renderer callback or structure affected by the change.
+
+</Step>
+<Step>
+
+### Stage the live-preview sources
+
+Run `npm run build` in `docs/site` to stage the updated public header and implementation.
+
+</Step>
+<Step>
+
+### Update the example
+
+Update or add a live example when the change is user-facing.
+
+</Step>
+<Step>
+
+### Update the documentation
+
+Update the relevant guide and API-reference page.
+
+</Step>
+<Step>
+
+### Run the checks
+
+Run core tests, affected examples, and docs checks.
+
+</Step>
+</Steps>
 
 Avoid silently changing structure layouts, enum values, ownership rules, or accepted ranges. Record unavoidable compatibility changes in [Changelog and compatibility](/compatibility).
