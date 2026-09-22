@@ -123,11 +123,11 @@ jobs:
             git clone --depth 1 https://dawn.googlesource.com/dawn dawn
           fi
           cmake -B dawn/build -S dawn -G Ninja -DCMAKE_BUILD_TYPE=Release \
-            -DDAWN_FETCH_DEPENDENCIES=ON -DDAWN_BUILD_SAMPLES=OFF -DTINT_BUILD_TESTS=OFF \
+            -DDAWN_FETCH_DEPENDENCIES=ON -DDAWN_BUILD_SAMPLES=OFF -DDAWN_BUILD_TESTS=OFF -DTINT_BUILD_TESTS=OFF \
             -DDAWN_BUILD_NODE_BINDINGS=OFF -DDAWN_ENABLE_INSTALL=ON -DCMAKE_CXX_SCAN_FOR_MODULES=OFF
-          # Dawn installs generated upstream WebGPU headers that are not a
-          # dependency of webgpu_dawn, so generate them before installing.
-          cmake --build dawn/build --target webgpu_dawn webgpu_headers_gen
+          # Build Dawn's complete configured graph so every generated header
+          # exported by the install step exists.
+          cmake --build dawn/build --config Release
           cmake --install dawn/build --prefix dawn/install
 
       - name: Configure with WebGPU backend
