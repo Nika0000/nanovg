@@ -136,7 +136,7 @@ git clone --depth 1 https://dawn.googlesource.com/dawn dawn
 cmake -B dawn/build -S dawn -DCMAKE_BUILD_TYPE=Release \
     -DDAWN_FETCH_DEPENDENCIES=ON -DDAWN_BUILD_SAMPLES=OFF -DTINT_BUILD_TESTS=OFF \
     -DDAWN_BUILD_NODE_BINDINGS=OFF -DDAWN_ENABLE_INSTALL=ON
-cmake --build dawn/build --target webgpu_dawn --config Release -j
+cmake --build dawn/build --target webgpu_dawn webgpu_headers_gen --config Release -j
 cmake --install dawn/build --prefix dawn/install --config Release
 
 cmake -B build -DCMAKE_BUILD_TYPE=Release -DNANOVG_BUILD_EXAMPLES=ON \
