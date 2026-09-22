@@ -1,0 +1,67 @@
+---
+title: Images and image patterns
+description: Load RGBA or encoded images, draw them through paints, update them, and release them.
+---
+
+NanoVG represents an uploaded texture with an integer image handle. A value of `0` indicates creation failure.
+
+## Create an image
+
+Load a supported encoded image from disk:
+
+```c
+int image = nvgCreateImage(vg, "assets/photo.jpg", 0);
+if (image == 0) {
+    /* Report the missing or invalid image. */
+}
+```
+
+`nvgCreateImageMem()` decodes an encoded memory buffer. `nvgCreateImageRGBA()` uploads raw, tightly packed RGBA8 pixels:
+
+```c
+int image = nvgCreateImageRGBA(vg, width, height, 0, rgbaPixels);
+```
+
+The upload is complete when the function returns; the caller keeps ownership of the supplied pixel buffer.
+
+## Draw an image
+
+Images are rendered through an image-pattern paint applied to a path:
+
+```c
+int width, height;
+nvgImageSize(vg, image, &width, &height);
+
+NVGpaint paint = nvgImagePattern(
+    vg, x, y, (float)width, (float)height, 0.0f, image, 1.0f);
+
+nvgBeginPath(vg);
+nvgRect(vg, x, y, (float)width, (float)height);
+nvgFillPaint(vg, paint);
+nvgFill(vg);
+```
+
+Change the pattern extent to scale the image. Clip it into a rounded rectangle by replacing `nvgRect()` with `nvgRoundedRect()`.
+
+## Image flags
+
+Image flags are combined when the handle is created. Common flags include:
+
+- `NVG_IMAGE_REPEATX` and `NVG_IMAGE_REPEATY` for tiling.
+- `NVG_IMAGE_FLIPY` when the source orientation is inverted for the renderer.
+- `NVG_IMAGE_PREMULTIPLIED` when supplied RGBA colors already contain premultiplied alpha.
+- `NVG_IMAGE_NEAREST` for nearest-neighbor sampling.
+- `NVG_IMAGE_GENERATE_MIPMAPS` to request mipmaps where the backend supports them.
+
+Match `NVG_IMAGE_PREMULTIPLIED` to the actual pixel representation. A mismatch commonly produces dark or bright fringes around transparent edges.
+
+## Update and delete
+
+`nvgUpdateImage()` replaces the pixels of an existing image using its original dimensions. Delete the handle when finished:
+
+```c
+nvgDeleteImage(vg, image);
+image = 0;
+```
+
+Image handles belong to the context that created them and cannot be shared directly between NanoVG contexts.

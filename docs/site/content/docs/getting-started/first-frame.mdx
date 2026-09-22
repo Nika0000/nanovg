@@ -1,0 +1,67 @@
+---
+title: Your first frame
+description: Create an OpenGL 3 NanoVG context and draw a simple shape each frame.
+---
+
+This example uses OpenGL 3 to show the NanoVG lifecycle. It assumes the application has already created a current OpenGL context and loaded the required OpenGL functions.
+
+## Create the context
+
+In one translation unit, enable the OpenGL 3 implementation and include the renderer header:
+
+```c
+#include <nanovg/nanovg.h>
+
+#define NANOVG_GL3_IMPLEMENTATION
+#include <nanovg/nanovg_gl.h>
+
+NVGcontext* createNanoVG(void)
+{
+    return nvgCreateGL3(NVG_ANTIALIAS | NVG_STENCIL_STROKES | NVG_DEBUG);
+}
+```
+
+Check the returned pointer before rendering. `NVG_ANTIALIAS` adds geometry-based edge antialiasing. `NVG_STENCIL_STROKES` improves overlapping strokes, and `NVG_DEBUG` enables additional backend error checks.
+
+The target framebuffer must have a stencil buffer. Clear its stencil values before drawing a frame.
+
+## Draw
+
+Pass the logical window dimensions and the framebuffer-to-window pixel ratio to `nvgBeginFrame()`:
+
+```c
+void drawNanoVG(NVGcontext* vg, int windowWidth, int windowHeight, int framebufferWidth)
+{
+    float pixelRatio = (float)framebufferWidth / (float)windowWidth;
+
+    nvgBeginFrame(vg, (float)windowWidth, (float)windowHeight, pixelRatio);
+
+    nvgBeginPath(vg);
+    nvgRoundedRect(vg, 24.0f, 24.0f, 180.0f, 64.0f, 8.0f);
+    nvgFillColor(vg, nvgRGB(255, 192, 0));
+    nvgFill(vg);
+
+    nvgEndFrame(vg);
+}
+```
+
+A typical host frame performs these operations in order:
+
+1. Make the graphics context current and bind the destination framebuffer.
+2. Set the viewport and clear color, depth, and stencil as needed.
+3. Call `nvgBeginFrame()`.
+4. Issue NanoVG drawing commands.
+5. Call `nvgEndFrame()` to flush the batched work.
+6. Present or swap the host application's render target.
+
+Keep all NanoVG drawing commands inside the frame pair. Use logical window coordinates; the pixel ratio lets NanoVG scale antialiasing and font rendering for high-density displays.
+
+## Destroy the context
+
+Release resources with the delete function matching the create function:
+
+```c
+nvgDeleteGL3(vg);
+```
+
+Destroy the NanoVG context while its graphics device or OpenGL context is still valid. Other renderers follow the same drawing lifecycle but have different create, bind, and delete calls; see [Choosing a renderer](/getting-started/choosing-a-renderer).

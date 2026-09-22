@@ -1,0 +1,20 @@
+---
+title: Adding a renderer backend
+description: Implement NanoVG renderer callbacks and document native resource ownership.
+---
+
+A backend supplies `NVGparams` callbacks for creation, textures, viewport updates, cancellation, flushing, fills, strokes, triangles, and deletion, then creates the shared context with `nvgCreateInternal()`.
+
+Use an existing maintained backend closest to the target API's model. Explicit APIs should keep device, queue, command-buffer, render-pass, format, synchronization, and frame-index ownership clear.
+
+## Required work
+
+- Implement every required callback and all failure cleanup paths.
+- Define context create/delete functions in a public backend header.
+- Document borrowed and owned native handles.
+- Support font-atlas texture growth and flushes during a frame.
+- Preserve NanoVG fill, stroke, scissor, blend, and image semantics.
+- Add CMake integration and a minimal maintained example.
+- Document render-target formats, stencil requirements, state changes, synchronization, and cleanup order.
+
+Do not expose `NVGparams` as an application integration shortcut. It is an internal renderer contract and may evolve with the core.

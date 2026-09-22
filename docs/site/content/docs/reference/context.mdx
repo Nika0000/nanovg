@@ -1,0 +1,234 @@
+---
+title: Context and frames
+description: Detailed reference for NanoVG frame lifecycle and global compositing functions.
+---
+
+import { contextExample } from "@/lib/live-examples";
+
+An `NVGcontext` owns NanoVG's drawing state, command buffers, path cache, images, fonts, and renderer-specific resources. Create it with one of the functions in [Renderer creation](/reference/renderer-creation), use it for one active frame at a time, and destroy it before the underlying graphics device or context.
+
+The functions on this page do not create a window, bind a render target, clear attachments, submit a native command buffer, or present an image. Those operations remain the host application's responsibility.
+
+<LiveExample code={contextExample} />
+
+## Complete frame sequence
+
+```c
+/* Host API: bind the target, set the viewport, and clear stencil. */
+prepareRenderTarget();
+
+float pixelRatio = (float)framebufferWidth / (float)windowWidth;
+
+nvgBeginFrame(vg, (float)windowWidth, (float)windowHeight, pixelRatio);
+
+drawApplicationUi(vg);
+
+nvgEndFrame(vg);
+
+/* Host API: submit or present after NanoVG has flushed. */
+presentRenderTarget();
+```
+
+Do not nest frames or share one context between concurrently recording threads. Keep all calls that affect a frame on the graphics thread unless a specific API, such as the CPU-only `nvgFilterRGBA()`, documents otherwise.
+
+## `nvgBeginFrame`
+
+```c
+void nvgBeginFrame(
+    NVGcontext* ctx,
+    float windowWidth,
+    float windowHeight,
+    float devicePixelRatio);
+```
+
+Begins a new frame and configures NanoVG's logical drawing area.
+
+### Parameters
+
+| Parameter | Meaning |
+| --- | --- |
+| `ctx` | A valid renderer context. Null is not accepted. |
+| `windowWidth` | Width of the drawing area in logical application units. |
+| `windowHeight` | Height of the drawing area in logical application units. |
+| `devicePixelRatio` | Number of physical framebuffer pixels per logical unit. |
+
+For a GLFW window, calculate the ratio from framebuffer and window dimensions:
+
+```c
+int windowWidth, windowHeight;
+int framebufferWidth, framebufferHeight;
+
+glfwGetWindowSize(window, &windowWidth, &windowHeight);
+glfwGetFramebufferSize(window, &framebufferWidth, &framebufferHeight);
+
+float pixelRatio = (float)framebufferWidth / (float)windowWidth;
+nvgBeginFrame(vg, windowWidth, windowHeight, pixelRatio);
+```
+
+Use logical dimensions for the width and height. Passing framebuffer dimensions together with a ratio greater than `1` scales the frame twice and produces incorrect coordinates, stroke widths, and text size.
+
+### State changes
+
+At the start of every frame, NanoVG:
+
+1. Clears the saved-state stack.
+2. Creates one initial state and resets it to defaults.
+3. Updates tessellation tolerances for the device pixel ratio.
+4. Notifies the renderer of the logical viewport and ratio.
+5. Resets per-frame draw statistics and font-texture dirty tracking.
+
+State from the previous frame therefore does not carry into the new frame. Set custom transforms, clipping, paints, alpha, compositing, and text styles again where required.
+
+Common default state includes a white fill, black stroke, `NVG_SOURCE_OVER` compositing, a one-unit stroke, solid lines, identity transform, no scissor, full global alpha, and left/baseline text alignment.
+
+### Render-target requirements
+
+Prepare the native target before calling this function:
+
+- Bind the intended color and stencil attachments.
+- Set a viewport matching their physical dimensions.
+- Clear stencil to zero for an independent frame.
+- Begin the native render pass when using an explicit API.
+- Bind a WebGPU pass with `nvgWgpuBindRenderPass()` before any NanoVG drawing call.
+
+The exact requirements are documented under [Renderer backends](/backends).
+
+## `nvgEndFrame`
+
+```c
+void nvgEndFrame(NVGcontext* ctx);
+```
+
+Finishes the active frame. NanoVG uploads pending font-atlas changes, asks the renderer to flush queued fills, strokes, and triangles, and then consolidates font-atlas textures when the atlas grew during the frame.
+
+The function returns no status. Renderer validation or native API errors must be collected through the selected backend's normal debug and error-reporting facilities.
+
+After it returns, the host may end its native render pass, submit command buffers, transition attachments, or present. Do not issue more drawing calls until the next `nvgBeginFrame()`.
+
+Text can force an earlier renderer flush when its font atlas grows. Backends that require an active render pass must have that pass ready before the first drawing or text call, not only before `nvgEndFrame()`.
+
+## `nvgCancelFrame`
+
+```c
+void nvgCancelFrame(NVGcontext* ctx);
+```
+
+Asks the renderer to cancel queued work for the active frame. Use it when the host abandons a frame after `nvgBeginFrame()` and will not call `nvgEndFrame()`.
+
+```c
+nvgBeginFrame(vg, width, height, ratio);
+
+if (!buildUi(vg)) {
+    nvgCancelFrame(vg);
+    abortHostFrame();
+    return;
+}
+
+nvgEndFrame(vg);
+```
+
+Cancellation only invokes the backend's cancel callback. The host must still cancel or close its own render pass, command buffer, acquired surface image, and synchronization state as required by the native API. Do not call both `nvgCancelFrame()` and `nvgEndFrame()` for the same frame.
+
+## Compositing model
+
+NanoVG uses premultiplied-alpha colors for blending. Conceptually, each channel is calculated as:
+
+```text
+result = source × sourceFactor + destination × destinationFactor
+```
+
+The current composite operation is saved and restored with `nvgSave()` and `nvgRestore()`. Changing it affects subsequent fills, strokes, images, and text until it is changed again or the state is restored.
+
+## `nvgGlobalCompositeOperation`
+
+```c
+void nvgGlobalCompositeOperation(NVGcontext* ctx, int op);
+```
+
+Selects one predefined `NVGcompositeOperation`.
+
+| Operation | Source factor | Destination factor | Typical result |
+| --- | --- | --- | --- |
+| `NVG_SOURCE_OVER` | `NVG_ONE` | `NVG_ONE_MINUS_SRC_ALPHA` | Draw source over destination; default. |
+| `NVG_SOURCE_IN` | `NVG_DST_ALPHA` | `NVG_ZERO` | Keep source only where destination exists. |
+| `NVG_SOURCE_OUT` | `NVG_ONE_MINUS_DST_ALPHA` | `NVG_ZERO` | Keep source only where destination is transparent. |
+| `NVG_ATOP` | `NVG_DST_ALPHA` | `NVG_ONE_MINUS_SRC_ALPHA` | Place source over destination while preserving destination coverage. |
+| `NVG_DESTINATION_OVER` | `NVG_ONE_MINUS_DST_ALPHA` | `NVG_ONE` | Draw source behind existing destination. |
+| `NVG_DESTINATION_IN` | `NVG_ZERO` | `NVG_SRC_ALPHA` | Keep destination only where source exists. |
+| `NVG_DESTINATION_OUT` | `NVG_ZERO` | `NVG_ONE_MINUS_SRC_ALPHA` | Remove destination where source exists. |
+| `NVG_DESTINATION_ATOP` | `NVG_ONE_MINUS_DST_ALPHA` | `NVG_SRC_ALPHA` | Keep destination over the source's coverage. |
+| `NVG_LIGHTER` | `NVG_ONE` | `NVG_ONE` | Add source and destination. |
+| `NVG_COPY` | `NVG_ONE` | `NVG_ZERO` | Replace destination with source. |
+| `NVG_XOR` | `NVG_ONE_MINUS_DST_ALPHA` | `NVG_ONE_MINUS_SRC_ALPHA` | Keep areas belonging to only one input. |
+
+Pass only a declared operation. In the current core implementation, an unknown value falls back to factors `NVG_ONE` and `NVG_ZERO`, which behaves like `NVG_COPY`; callers should not rely on that fallback as API behavior.
+
+Example using temporary additive blending:
+
+```c
+nvgSave(vg);
+nvgGlobalCompositeOperation(vg, NVG_LIGHTER);
+drawGlowLayers(vg);
+nvgRestore(vg);
+```
+
+## `nvgGlobalCompositeBlendFunc`
+
+```c
+void nvgGlobalCompositeBlendFunc(
+    NVGcontext* ctx,
+    int sourceFactor,
+    int destinationFactor);
+```
+
+Sets custom factors and uses the same pair for RGB and alpha channels. Both factors must be `NVGblendFactor` values.
+
+This recreates the default source-over operation:
+
+```c
+nvgGlobalCompositeBlendFunc(
+    vg,
+    NVG_ONE,
+    NVG_ONE_MINUS_SRC_ALPHA);
+```
+
+## `nvgGlobalCompositeBlendFuncSeparate`
+
+```c
+void nvgGlobalCompositeBlendFuncSeparate(
+    NVGcontext* ctx,
+    int sourceRGB,
+    int destinationRGB,
+    int sourceAlpha,
+    int destinationAlpha);
+```
+
+Sets independent factors for color and alpha. Use this only when the predefined operations and shared-factor function cannot express the desired blend.
+
+Available factors are:
+
+- `NVG_ZERO`
+- `NVG_ONE`
+- `NVG_SRC_COLOR`
+- `NVG_ONE_MINUS_SRC_COLOR`
+- `NVG_DST_COLOR`
+- `NVG_ONE_MINUS_DST_COLOR`
+- `NVG_SRC_ALPHA`
+- `NVG_ONE_MINUS_SRC_ALPHA`
+- `NVG_DST_ALPHA`
+- `NVG_ONE_MINUS_DST_ALPHA`
+- `NVG_SRC_ALPHA_SATURATE`
+
+The core stores the requested factors without validating them. Unsupported or invalid combinations may produce native API validation errors or backend-specific results, so prefer predefined operations for portable drawing.
+
+## Common mistakes
+
+- Passing physical framebuffer dimensions to `nvgBeginFrame()` while also using a high-DPI ratio.
+- Clearing or rebinding the target between NanoVG drawing calls and `nvgEndFrame()`.
+- Beginning WebGPU drawing before binding the render pass.
+- Presenting before `nvgEndFrame()` has flushed queued work.
+- Expecting drawing state to persist across frames.
+- Using straight-alpha assumptions when defining custom blend factors.
+- Calling `nvgCancelFrame()` without also abandoning the host API's frame resources.
+
+For a smaller integration walkthrough, see [Your first frame](/getting-started/first-frame).

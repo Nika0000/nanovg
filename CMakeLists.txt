@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.15)
 project(nanovg C CXX)
 
 option(NANOVG_BUILD_EXAMPLES "Build example programs" OFF)
-option(NANOVG_BUILD_PLAYGROUND "Build the WebAssembly playground (requires Emscripten)" OFF)
+
 option(NANOVG_PLATFORM_PS4 "Enable PS4 backend" OFF)
 option(NANOVG_PLATFORM_DEKO3D "Enable Nintendo Switch/deko3d backend" OFF)
 option(NANOVG_PLATFORM_METAL "Enable Metal backend" OFF)
@@ -41,9 +41,6 @@ if(NANOVG_PLATFORM_METAL)
     target_sources(nanovg PRIVATE src/metal/nanovg_mtl.m)
 endif()
 
-if(NANOVG_BUILD_PLAYGROUND)
-    add_subdirectory(playground)
-endif()
 
 option(NANOVG_BUILD_TESTS "Build unit tests" OFF)
 

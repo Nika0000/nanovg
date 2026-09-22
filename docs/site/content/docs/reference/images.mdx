@@ -1,0 +1,176 @@
+---
+title: Images
+description: Reference for creating, updating, querying, and deleting NanoVG images.
+---
+
+import { imagesExample } from "@/lib/live-examples";
+
+NanoVG images are renderer resources identified by integer handles. Create an image in the context that will draw it, use that handle in `nvgImagePattern()`, and delete it when it is no longer needed.
+
+Creation functions return a nonzero handle on success and `0` on failure. Image handles are local to their creating `NVGcontext`; do not pass one to another context.
+
+<LiveExample code={imagesExample} />
+
+## Image flags
+
+```c
+enum NVGimageFlags {
+    NVG_IMAGE_GENERATE_MIPMAPS = 1 << 0,
+    NVG_IMAGE_REPEATX          = 1 << 1,
+    NVG_IMAGE_REPEATY          = 1 << 2,
+    NVG_IMAGE_FLIPY            = 1 << 3,
+    NVG_IMAGE_PREMULTIPLIED    = 1 << 4,
+    NVG_IMAGE_NEAREST          = 1 << 5,
+    NVG_IMAGE_STREAMING        = 1 << 6,
+    NVG_IMAGE_COPY_SWAP        = 1 << 7,
+};
+```
+
+Combine flags with bitwise OR. Pass `0` for the default behavior.
+
+| Flag | Meaning |
+| --- | --- |
+| `NVG_IMAGE_GENERATE_MIPMAPS` | Generate mip levels when the image is created. |
+| `NVG_IMAGE_REPEATX` | Repeat the image outside its horizontal range. |
+| `NVG_IMAGE_REPEATY` | Repeat the image outside its vertical range. |
+| `NVG_IMAGE_FLIPY` | Flip the image vertically when rendering it. |
+| `NVG_IMAGE_PREMULTIPLIED` | Declare that input RGB values are already multiplied by alpha. |
+| `NVG_IMAGE_NEAREST` | Use nearest-neighbor sampling instead of linear sampling. |
+| `NVG_IMAGE_STREAMING` | Request a dynamic, CPU-writable texture on the D3D11 backend. |
+| `NVG_IMAGE_COPY_SWAP` | Use the D3D11 swap-texture update path. |
+
+Flag support depends on the renderer. In particular, the two streaming flags are D3D11-specific. Some backend headers also define `NVG_IMAGE_NODELETE` for images that wrap externally owned native textures; use it only with the matching backend API.
+
+## Load an image from a file
+
+```c
+int nvgCreateImage(NVGcontext* ctx, const char* filename, int imageFlags);
+```
+
+Decodes the file at `filename`, converts it to four-channel RGBA8, uploads it, releases the temporary decoded pixels, and returns the new image handle. This repository's stb_image loader accepts JPEG, PNG, PSD, TGA, PIC, and GIF data.
+
+The function prints an stb_image error and returns `0` if decoding fails. Upload failure also produces a zero handle through the renderer backend.
+
+```c
+int logo = nvgCreateImage(vg, "assets/logo.png", NVG_IMAGE_GENERATE_MIPMAPS);
+if (logo == 0) {
+    // Report or recover from the missing image.
+}
+```
+
+`nvgCreateImage()` is compiled only when NanoVG is built without `NVG_NO_STB`.
+
+## Load encoded image data from memory
+
+```c
+int nvgCreateImageMem(NVGcontext* ctx, int imageFlags, unsigned char* data, int ndata);
+```
+
+Decodes `ndata` bytes beginning at `data`, converts them to RGBA8, and uploads the result. The input buffer is read during the call and is not retained, so the caller may release or reuse it after the function returns.
+
+Like the file loader, this function requires the stb_image integration and is omitted from the implementation when `NVG_NO_STB` is defined.
+
+## Create an image from RGBA pixels
+
+```c
+int nvgCreateImageRGBA(NVGcontext* ctx,
+                       int w,
+                       int h,
+                       int imageFlags,
+                       const unsigned char* data);
+```
+
+Creates a `w` by `h` image from tightly packed RGBA8 pixels. Rows have `w * 4` bytes and channels are ordered red, green, blue, alpha. The renderer consumes the pixels during the call and does not retain `data`.
+
+Pass straight-alpha pixels by default. If the RGB channels have already been multiplied by alpha, include `NVG_IMAGE_PREMULTIPLIED`.
+
+```c
+static const unsigned char checker[] = {
+    255, 255, 255, 255,   32,  32,  32, 255,
+     32,  32,  32, 255,  255, 255, 255, 255,
+};
+
+int image = nvgCreateImageRGBA(
+    vg, 2, 2,
+    NVG_IMAGE_REPEATX | NVG_IMAGE_REPEATY | NVG_IMAGE_NEAREST,
+    checker);
+```
+
+Some renderer helpers use a null `data` pointer to allocate an uninitialized render target. For ordinary portable image creation, provide a complete pixel buffer.
+
+## Update all pixels
+
+```c
+void nvgUpdateImage(NVGcontext* ctx, int image, const unsigned char* data);
+```
+
+Replaces the complete image using its existing width and height. `data` must contain tightly packed RGBA8 pixels for the full image. Partial rectangles, row strides, resizing, and status reporting are not supported by this API.
+
+The source buffer is consumed synchronously and is not retained. Keep the alpha representation consistent with the flags used when the image was created.
+
+```c
+// pixels contains width * height * 4 bytes.
+nvgUpdateImage(vg, image, pixels);
+```
+
+## Query dimensions
+
+```c
+void nvgImageSize(NVGcontext* ctx, int image, int* w, int* h);
+```
+
+Writes the image's pixel width and height through `w` and `h`.
+
+```c
+int width, height;
+nvgImageSize(vg, image, &width, &height);
+```
+
+Pass a valid image handle and valid output pointers. The function has no status return for an invalid handle.
+
+## Delete an image
+
+```c
+void nvgDeleteImage(NVGcontext* ctx, int image);
+```
+
+Releases the renderer resource associated with `image`. Delete it through the same context that created it, and do not use the handle afterward.
+
+```c
+if (image != 0) {
+    nvgDeleteImage(vg, image);
+    image = 0;
+}
+```
+
+Images created by the regular creation functions are owned by NanoVG. Images wrapping native backend textures can have different ownership rules when created with a backend-specific `NVG_IMAGE_NODELETE` flag.
+
+## Draw an image
+
+Image handles become paints through `nvgImagePattern()`:
+
+```c
+int width, height;
+nvgImageSize(vg, image, &width, &height);
+
+NVGpaint paint = nvgImagePattern(
+    vg, x, y, (float)width, (float)height, 0.0f, image, 1.0f);
+
+nvgBeginPath(vg);
+nvgRect(vg, x, y, (float)width, (float)height);
+nvgFillPaint(vg, paint);
+nvgFill(vg);
+```
+
+The image must remain alive until every draw that uses it has been submitted. For pattern parameters and transform behavior, see [Paints and colors](/reference/paints).
+
+## Common mistakes
+
+- Continuing with handle `0` after image creation failed.
+- Passing encoded PNG or JPEG bytes to `nvgCreateImageRGBA()` instead of decoded RGBA8 pixels.
+- Supplying a partial buffer to `nvgUpdateImage()`; it always updates the full image.
+- Marking straight-alpha pixels as premultiplied, or omitting the flag for premultiplied pixels.
+- Deleting an image through a different context or using its handle after deletion.
+- Expecting every renderer to implement backend-specific streaming or native-texture flags identically.
+
+See [Images and image patterns](/guides/images) for layout and cropping examples, and [Image filters](/reference/image-filters) for creating filtered images.

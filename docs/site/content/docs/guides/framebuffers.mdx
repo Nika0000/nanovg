@@ -1,0 +1,74 @@
+---
+title: Framebuffers and render targets
+description: Render NanoVG into an offscreen OpenGL or Metal target and use the result as an image.
+---
+
+Offscreen rendering is useful for cached UI, previews, minimaps, and compositing. The host or backend creates a color texture plus stencil storage, renders a complete NanoVG frame into it, then samples the resulting image later.
+
+## OpenGL framebuffer helper
+
+Include `nanovg_gl_utils.h` after the selected OpenGL implementation header. Create the framebuffer in physical pixels:
+
+```c
+NVGLUframebuffer* target = nvgluCreateFramebuffer(
+    vg,
+    (int)(logicalWidth * pixelRatio),
+    (int)(logicalHeight * pixelRatio),
+    0);
+
+if (target == NULL) {
+    /* The framebuffer or stencil attachment could not be created. */
+}
+```
+
+The helper owns an OpenGL framebuffer, stencil renderbuffer, and NanoVG image. Its `image` member is the handle used with `nvgImagePattern()`.
+
+## Render offscreen
+
+```c
+nvgluBindFramebuffer(target);
+glViewport(0, 0, targetWidth, targetHeight);
+glClearColor(0, 0, 0, 0);
+glClear(GL_COLOR_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
+
+nvgBeginFrame(vg, logicalWidth, logicalHeight, pixelRatio);
+drawPreview(vg);
+nvgEndFrame(vg);
+
+nvgluBindFramebuffer(NULL);
+```
+
+Restore the window framebuffer and viewport before continuing the main frame. `nvgluBindFramebuffer(NULL)` restores the default framebuffer remembered by the helper, but it does not restore the viewport.
+
+Draw `target->image` like any other NanoVG image. The helper creates it with `NVG_IMAGE_FLIPY` and `NVG_IMAGE_PREMULTIPLIED` automatically.
+
+## Cleanup
+
+```c
+nvgluDeleteFramebuffer(target);
+target = NULL;
+```
+
+The delete helper also deletes its NanoVG image. Do not call `nvgDeleteImage()` separately for `target->image`.
+
+## Metal framebuffer helper
+
+The Metal backend provides the equivalent `MNVGframebuffer` API:
+
+```c
+MNVGframebuffer* target = mnvgCreateFramebuffer(vg, width, height, imageFlags);
+mnvgBindFramebuffer(target);
+/* Render a NanoVG frame. */
+mnvgBindFramebuffer(NULL);
+mnvgDeleteFramebuffer(target);
+```
+
+Its `image` member is also a NanoVG image handle. Other backends expect the host application to create and bind compatible offscreen attachments using the native graphics API.
+
+## Rules for every backend
+
+- Provide stencil storage compatible with the selected backend.
+- Clear stencil before each independent NanoVG render.
+- Match the viewport, logical dimensions, and pixel ratio to the target.
+- Finish the offscreen NanoVG frame before sampling its image.
+- Synchronize writes and reads according to the native graphics API.

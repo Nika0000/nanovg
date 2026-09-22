@@ -1,0 +1,262 @@
+---
+title: Text and fonts
+description: Reference for loading fonts, configuring text, drawing strings, and measuring layout.
+---
+
+import { textExample } from "@/lib/live-examples";
+
+NanoVG uses UTF-8 strings and rasterizes glyphs into internal atlas textures. Font handles, fallback relationships, and atlas resources belong to the `NVGcontext` that created them.
+
+Text functions use the current font settings, transform, fill color, global alpha, composite operation, and scissor. Only solid-color fills are supported for text.
+
+<LiveExample code={textExample} />
+
+## Load fonts
+
+```c
+int nvgCreateFont(NVGcontext* ctx, const char* name, const char* filename);
+int nvgCreateFontAtIndex(NVGcontext* ctx, const char* name, const char* filename, int fontIndex);
+```
+
+Loads a font file, registers it under `name`, and returns its integer handle. The `AtIndex` variant selects a face from a font collection such as a TTC file. Both return `-1` on failure.
+
+```c
+int regular = nvgCreateFont(vg, "ui", "assets/Inter-Regular.ttf");
+if (regular == -1) {
+    // Stop drawing text or report the missing font.
+}
+```
+
+The registered name is used by `nvgFontFace()` and `nvgFindFont()`; it does not need to match the family name stored inside the file.
+
+### Load from memory
+
+```c
+int nvgCreateFontMem(NVGcontext* ctx, const char* name,
+                     unsigned char* data, int ndata, int freeData);
+int nvgCreateFontMemAtIndex(NVGcontext* ctx, const char* name,
+                            unsigned char* data, int ndata,
+                            int freeData, int fontIndex);
+```
+
+Registers `ndata` bytes of font data. When `freeData` is nonzero, NanoVG takes ownership and eventually frees `data`; the allocation must be compatible with the allocator used by font stash. When `freeData` is zero, the caller retains ownership and must keep the buffer valid for the lifetime of the font context.
+
+The `AtIndex` variant selects a face from an in-memory font collection. Creation returns `-1` on failure.
+
+## Find and select a font
+
+```c
+int nvgFindFont(NVGcontext* ctx, const char* name);
+void nvgFontFaceId(NVGcontext* ctx, int font);
+void nvgFontFace(NVGcontext* ctx, const char* name);
+```
+
+`nvgFindFont()` returns the handle registered under `name`, or `-1` if no such font exists. A null name also returns `-1`.
+
+`nvgFontFaceId()` selects a loaded font by handle. `nvgFontFace()` looks up and selects a font by its registered name. Selecting an unknown name makes the current font invalid, so validate font loading during initialization.
+
+## Configure fallback fonts
+
+```c
+int nvgAddFallbackFontId(NVGcontext* ctx, int baseFont, int fallbackFont);
+int nvgAddFallbackFont(NVGcontext* ctx, const char* baseFont, const char* fallbackFont);
+void nvgResetFallbackFontsId(NVGcontext* ctx, int baseFont);
+void nvgResetFallbackFonts(NVGcontext* ctx, const char* baseFont);
+```
+
+A fallback supplies glyphs missing from a base font. Add fallbacks in the order they should be searched. The `Id` variant returns `0` immediately if either handle is `-1`; otherwise the add functions return the result from font stash, where a nonzero value indicates success.
+
+```c
+int ui = nvgCreateFont(vg, "ui", "assets/Inter-Regular.ttf");
+int symbols = nvgCreateFont(vg, "symbols", "assets/NotoSansSymbols.ttf");
+if (ui != -1 && symbols != -1)
+    nvgAddFallbackFontId(vg, ui, symbols);
+```
+
+The reset functions remove all fallback relationships from the specified base font. They do not unload either font.
+
+## Text style
+
+Text style is part of the saved graphics state, so `nvgSave()` and `nvgRestore()` can isolate temporary changes.
+
+```c
+void nvgFontSize(NVGcontext* ctx, float size);
+void nvgFontBlur(NVGcontext* ctx, float blur);
+void nvgFontDilate(NVGcontext* ctx, float dilate);
+void nvgFontQuality(NVGcontext* ctx, float quality);
+void nvgTextLetterSpacing(NVGcontext* ctx, float spacing);
+void nvgTextLineHeight(NVGcontext* ctx, float lineHeight);
+```
+
+| Function | Setting |
+| --- | --- |
+| `nvgFontSize()` | Font size in local coordinate units. |
+| `nvgFontBlur()` | Glyph-edge blur in local units. Zero produces sharp text. |
+| `nvgFontDilate()` | Expands or contracts the rasterized glyph shape. |
+| `nvgFontQuality()` | Multiplier used for glyph rasterization resolution. Use a positive value. |
+| `nvgTextLetterSpacing()` | Extra spacing between glyphs in local units. |
+| `nvgTextLineHeight()` | Multiplier applied to the natural line height by multiline drawing. |
+
+`nvgTextLineHeight()` is proportional: `1.0f` uses the natural line height, while `1.5f` advances rows by one and a half times that height.
+
+### Alignment
+
+```c
+enum NVGalign {
+    NVG_ALIGN_LEFT     = 1 << 0,
+    NVG_ALIGN_CENTER   = 1 << 1,
+    NVG_ALIGN_RIGHT    = 1 << 2,
+    NVG_ALIGN_TOP      = 1 << 3,
+    NVG_ALIGN_MIDDLE   = 1 << 4,
+    NVG_ALIGN_BOTTOM   = 1 << 5,
+    NVG_ALIGN_BASELINE = 1 << 6,
+};
+
+void nvgTextAlign(NVGcontext* ctx, int align);
+```
+
+Combine one horizontal and one vertical flag. The defaults are `NVG_ALIGN_LEFT | NVG_ALIGN_BASELINE`.
+
+Alignment changes the meaning of the `(x, y)` anchor passed to drawing and measurement functions.
+
+## Draw one line
+
+```c
+float nvgText(NVGcontext* ctx, float x, float y, const char* string, const char* end);
+```
+
+Draws a UTF-8 string at the aligned anchor `(x, y)`. Pass `NULL` for `end` to read through the terminating null byte, or pass a pointer one byte beyond the desired substring. The return value is the final horizontal pen position in local coordinates.
+
+If no valid font is selected or temporary vertex allocation fails, the function draws nothing and returns `x`.
+
+```c
+nvgFillColor(vg, nvgRGBA(240, 243, 248, 255));
+nvgFontFaceId(vg, regular);
+nvgFontSize(vg, 20.0f);
+nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_BASELINE);
+float nextX = nvgText(vg, 24.0f, 40.0f, "Status: ready", NULL);
+```
+
+## Draw wrapped text
+
+```c
+void nvgTextBox(NVGcontext* ctx,
+                float x, float y,
+                float breakRowWidth,
+                const char* string, 
+                const char* end);
+```
+
+Draws multiple rows within `breakRowWidth`. Explicit newline characters always start a row. Normal text wraps at word boundaries; a word wider than the available width is split at a character boundary without hyphenation.
+
+`x` identifies the left edge of the text box even for centered or right-aligned text. Rows advance by the natural font line height multiplied by the current line-height value.
+
+## Measure one line
+
+```c
+float nvgTextBounds(NVGcontext* ctx, float x, float y,
+                    const char* string, const char* end,
+                    float bounds[4]);
+```
+
+Returns the horizontal advance. A non-null `bounds` receives `[xmin, ymin, xmax, ymax]` in local coordinates. The horizontal advance and visible bounds can differ because glyph shapes may overhang their logical positions.
+
+## Measure wrapped text
+
+```c
+void nvgTextBoxBounds(NVGcontext* ctx, float x, float y,
+                      float breakRowWidth,
+                      const char* string, const char* end,
+                      float bounds[4]);
+```
+
+Measures text using the same wrapping and alignment behavior as `nvgTextBox()`. A non-null array receives `[xmin, ymin, xmax, ymax]`. If no valid font is selected, a supplied bounds array is filled with zeros.
+
+## Vertical metrics
+
+```c
+void nvgTextMetrics(NVGcontext* ctx, float* ascender,
+                    float* descender, float* lineh);
+```
+
+Returns the current font's ascender, descender, and natural line height in local coordinates. Any output pointer may be null. The reported `lineh` does not include the multiplier configured by `nvgTextLineHeight()`.
+
+## Glyph positions
+
+```c
+typedef struct NVGglyphPosition {
+    const char* str;
+    float x;
+    float minx, maxx;
+} NVGglyphPosition;
+
+int nvgTextGlyphPositions(NVGcontext* ctx, float x, float y,
+                          const char* string, const char* end,
+                          NVGglyphPosition* positions,
+                          int maxPositions);
+```
+
+Writes at most `maxPositions` entries and returns the number written. Each entry contains a pointer into the original UTF-8 string, the logical glyph position, and its visible horizontal bounds. The input string must remain alive while those pointers are used.
+
+This is useful for cursor placement and hit testing. The result count can be smaller than the number of input bytes because UTF-8 code points can occupy multiple bytes.
+
+## Break text into rows
+
+```c
+typedef struct NVGtextRow {
+    const char* start;
+    const char* end;
+    const char* next;
+    float width;
+    float minx, maxx;
+} NVGtextRow;
+
+int nvgTextBreakLines(NVGcontext* ctx, const char* string,
+                      const char* end, float breakRowWidth,
+                      NVGtextRow* rows, int maxRows);
+```
+
+Writes up to `maxRows` wrapped rows and returns the count. `start` and `end` delimit a row, while `next` points where a later call should continue. These are borrowed pointers into `string`, not null-terminated row copies.
+
+`width` is the logical advance. `minx` and `maxx` are visible bounds relative to the row origin. Leading whitespace is skipped, trailing whitespace is excluded from row width, and explicit newlines are consumed through `next`.
+
+```c
+const char* cursor = text;
+NVGtextRow rows[4];
+int count;
+
+while ((count = nvgTextBreakLines(vg, cursor, NULL, 320.0f, rows, 4)) != 0) {
+    for (int i = 0; i < count; ++i) {
+        // rows[i].start through rows[i].end is one row.
+    }
+    cursor = rows[count - 1].next;
+}
+```
+
+## Coordinates and transforms
+
+Measurements are returned in local coordinate space. Font size and line height remain expressed in configured units even when the current transform scales or rotates rendered glyphs. Minor differences can still arise from device-pixel snapping.
+
+This lets measured bounds and rendered text share the same transform:
+
+```c
+float bounds[4];
+nvgTextBounds(vg, x, y, label, NULL, bounds);
+nvgBeginPath(vg);
+nvgRoundedRect(vg, bounds[0] - 6.0f, bounds[1] - 4.0f,
+               bounds[2] - bounds[0] + 12.0f,
+               bounds[3] - bounds[1] + 8.0f, 4.0f);
+nvgFill(vg);
+```
+
+## Common mistakes
+
+- Drawing after font creation returned `-1`.
+- Releasing memory-font data while `freeData` is zero and the context still uses it.
+- Passing byte counts as glyph counts when working with UTF-8 strings.
+- Treating `NVGtextRow.start` and `end` as a null-terminated string.
+- Combining two horizontal or two vertical alignment flags.
+- Expecting `nvgTextLineHeight()` to change `nvgTextMetrics()` output.
+- Using gradient or image fills for text; this implementation supports solid colors only.
+
+See [Text and fonts](/guides/text-and-fonts) for task-oriented examples and [Transforms](/reference/transforms) for coordinate behavior.

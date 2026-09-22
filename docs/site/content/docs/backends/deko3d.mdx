@@ -1,0 +1,31 @@
+---
+title: deko3d
+description: Understand the repository components provided for the Nintendo Switch deko3d backend.
+---
+
+The deko3d backend combines the C-facing `nanovg_dk.h` adapter with the C++ `nvg::DkRenderer` implementation under `src/deko3d`.
+
+Enable it through CMake:
+
+```sh
+cmake -S . -B build -DNANOVG_PLATFORM_DEKO3D=ON
+cmake --build build --config Release
+```
+
+This adds the deko3d C++ sources and shader include directory to the `nanovg` target. A configured devkitPro/libnx/deko3d environment is still required; the option does not download a console toolchain.
+
+## Context ownership
+
+Create and initialize an application-owned `nvg::DkRenderer`, then pass it to:
+
+```cpp
+NVGcontext* vg = nvgCreateDk(renderer, flags);
+```
+
+The renderer object must remain valid for the lifetime of the NanoVG context. Delete the context with:
+
+```cpp
+nvgDeleteDk(vg);
+```
+
+There is no standalone deko3d example in this repository, so use `include/nanovg/dk_renderer.hpp` as the integration contract and follow the same frame ordering required by the host renderer.

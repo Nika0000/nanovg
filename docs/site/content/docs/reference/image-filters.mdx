@@ -1,0 +1,235 @@
+---
+title: Image filters
+description: Reference for CPU filter descriptors, status values, and filtered-image functions.
+---
+
+import { imageFiltersExample } from "@/lib/live-examples";
+
+The image-filter API processes caller-owned RGBA8 buffers synchronously on the CPU. `nvgFilterRGBA()` has no graphics dependency; the creation helpers additionally upload the result as an ordinary NanoVG image.
+
+<LiveExample code={imageFiltersExample} height={420} />
+
+## Status values
+
+```c
+typedef enum NVGfilterStatus {
+    NVG_FILTER_OK               = 0,
+    NVG_FILTER_INVALID_ARGUMENT = -1,
+    NVG_FILTER_OUT_OF_MEMORY    = -2,
+    NVG_FILTER_UPLOAD_FAILED    = -3
+} NVGfilterStatus;
+```
+
+| Value | Meaning |
+| --- | --- |
+| `NVG_FILTER_OK` | Filtering and any requested upload succeeded. |
+| `NVG_FILTER_INVALID_ARGUMENT` | A buffer, filter, parameter, count, or required pointer is invalid. |
+| `NVG_FILTER_OUT_OF_MEMORY` | A temporary CPU allocation failed. |
+| `NVG_FILTER_UPLOAD_FAILED` | Filtering succeeded, but the renderer could not create the image. |
+
+The encoded file and memory helpers return an image handle instead of this status enum, so decode, filtering, and upload failures all return `0` from those functions.
+
+## Pixel buffers
+
+```c
+typedef struct NVGpixelBuffer {
+    unsigned char* data;
+    int width, height;
+    int stride;
+    int premultiplied;
+} NVGpixelBuffer;
+```
+
+Pixels are RGBA8 with the top row first. `stride` is the number of bytes from one row to the next; zero selects the tightly packed value `width * 4`. An explicit stride must be at least `width * 4` and cannot be negative.
+
+`premultiplied` must be `0` for straight alpha or `1` when every RGB channel is already multiplied by alpha. Source and destination may use different alpha representations; the filter call converts between them.
+
+Both dimensions must be positive and must match between source and destination. The caller owns `data` and must provide at least:
+
+```text
+(height - 1) * stride + width * 4 bytes
+```
+
+where a zero stride is interpreted as `width * 4`.
+
+## Filter descriptors
+
+```c
+typedef enum NVGfilterType {
+    NVG_FILTER_GRAYSCALE,
+    NVG_FILTER_BRIGHTNESS_CONTRAST,
+    NVG_FILTER_BOX_BLUR,
+    NVG_FILTER_GAUSSIAN_BLUR,
+    NVG_FILTER_SHARPEN,
+    NVG_FILTER_UNSHARP_MASK,
+    NVG_FILTER_SOBEL,
+    NVG_FILTER_CONVOLUTION
+} NVGfilterType;
+
+typedef enum NVGfilterBorder {
+    NVG_FILTER_BORDER_CLAMP,
+    NVG_FILTER_BORDER_REPEAT,
+    NVG_FILTER_BORDER_MIRROR,
+    NVG_FILTER_BORDER_TRANSPARENT
+} NVGfilterBorder;
+
+typedef struct NVGfilter {
+    NVGfilterType type;
+    NVGfilterBorder border;
+    float amount;
+    float brightness;
+    float contrast;
+    float sigma;
+    int radiusX, radiusY;
+    int kernelWidth, kernelHeight;
+    const float* kernel;
+    float divisor;
+    float bias;
+} NVGfilter;
+```
+
+The border mode determines how spatial filters sample beyond an image edge:
+
+| Mode | Edge behavior |
+| --- | --- |
+| `NVG_FILTER_BORDER_CLAMP` | Reuse the nearest edge pixel. |
+| `NVG_FILTER_BORDER_REPEAT` | Wrap to the opposite edge. |
+| `NVG_FILTER_BORDER_MIRROR` | Reflect coordinates at the edge. |
+| `NVG_FILTER_BORDER_TRANSPARENT` | Sample transparent black outside the image. |
+
+## Initialize a filter
+
+```c
+NVGfilter nvgFilterInit(NVGfilterType type);
+```
+
+Returns a zero-initialized descriptor with `type` set and valid common defaults: clamp borders, `amount = 1`, `contrast = 1`, `sigma = 1`, box radii of `1`, and `divisor = 1`. A convolution still requires a kernel and valid dimensions before use.
+
+Always initialize with this function before overriding the fields needed by a filter:
+
+```c
+NVGfilter blur = nvgFilterInit(NVG_FILTER_GAUSSIAN_BLUR);
+blur.sigma = 2.5f;
+blur.border = NVG_FILTER_BORDER_MIRROR;
+```
+
+## Filter types and parameters
+
+| Type | Used fields | Valid values and behavior |
+| --- | --- | --- |
+| `NVG_FILTER_GRAYSCALE` | `amount` | `0` to `1`; interpolates from the original color to grayscale. |
+| `NVG_FILTER_BRIGHTNESS_CONTRAST` | `brightness`, `contrast` | Brightness is `-1` to `1`; contrast is `0` to `10000`, with identity at `1` and a pivot of `0.5`. |
+| `NVG_FILTER_BOX_BLUR` | `radiusX`, `radiusY`, `border` | Each radius is `0` to `128`. |
+| `NVG_FILTER_GAUSSIAN_BLUR` | `sigma`, `border` | Sigma is greater than `0` and at most `42`; radius is `ceil(3 * sigma)`. |
+| `NVG_FILTER_SHARPEN` | `amount`, `border` | Amount is `0` to `10000`. |
+| `NVG_FILTER_UNSHARP_MASK` | `amount`, `sigma`, `border` | Uses both sharpen amount and Gaussian sigma ranges. |
+| `NVG_FILTER_SOBEL` | `amount`, `border` | Gradient magnitude multiplier from `0` to `10000`. |
+| `NVG_FILTER_CONVOLUTION` | Kernel fields, `divisor`, `bias`, `border` | Applies a custom row-major correlation kernel. |
+
+All relevant floating-point parameters and kernel coefficients must be finite.
+
+For convolution, `kernelWidth` and `kernelHeight` must be odd values from `1` to `31`, and `kernel` must point to `kernelWidth * kernelHeight` coefficients. Coefficients are applied as correlation and are not flipped. NanoVG does not normalize their sum. `divisor` must have an absolute value of at least `1e-10`; `bias` must be finite with an absolute value no greater than `10000`.
+
+The kernel is read during the call and is not retained.
+
+## Filter pixels
+
+```c
+NVGfilterStatus nvgFilterRGBA(
+    const NVGpixelBuffer* source,
+    NVGpixelBuffer* destination,
+    const NVGfilter* filters,
+    int filterCount);
+```
+
+Runs `filterCount` descriptors in array order. The maximum chain length is `256`. With a zero count, `filters` may be null and the function copies pixels while converting alpha representation when necessary.
+
+Source and destination may alias completely or partially, so in-place filtering is supported:
+
+```c
+NVGpixelBuffer pixels = { rgba, width, height, 0, 0 };
+NVGfilter grayscale = nvgFilterInit(NVG_FILTER_GRAYSCALE);
+grayscale.amount = 0.75f;
+
+NVGfilterStatus status = nvgFilterRGBA(&pixels, &pixels, &grayscale, 1);
+```
+
+Validation and temporary allocation happen before output is committed. The destination remains unchanged on argument validation or allocation failure. A non-finite intermediate produced during a stage also returns `NVG_FILTER_INVALID_ARGUMENT` without committing the result.
+
+Stages operate in encoded RGB space without sRGB linearization. Blur filters process premultiplied RGB and alpha. Other filters preserve alpha. Intermediate values use floating point and are clamped only when the final RGBA8 pixels are written. Dimensions never change, so effects are clipped at the image bounds.
+
+The call is synchronous. Buffers, descriptors, and convolution kernels need remain valid only until it returns. Independent calls can run on worker threads because this function does not access an `NVGcontext`.
+
+## Filter and upload RGBA pixels
+
+```c
+NVGfilterStatus nvgCreateFilteredImageRGBA(
+    NVGcontext* ctx,
+    const NVGpixelBuffer* source,
+    int imageFlags,
+    const NVGfilter* filters,
+    int filterCount,
+    int* outImage);
+```
+
+Filters `source`, uploads the result with `nvgCreateImageRGBA()`, and writes its handle to `outImage`. The function sets `*outImage` to `0` before filtering, so it remains zero on any failure. A null `outImage`, null context, or invalid source returns `NVG_FILTER_INVALID_ARGUMENT`.
+
+Output pixels are premultiplied exactly when `imageFlags` includes `NVG_IMAGE_PREMULTIPLIED`. Other image flags are forwarded to image creation.
+
+```c
+NVGfilter filters[2];
+filters[0] = nvgFilterInit(NVG_FILTER_GAUSSIAN_BLUR);
+filters[0].sigma = 2.0f;
+filters[1] = nvgFilterInit(NVG_FILTER_GRAYSCALE);
+filters[1].amount = 0.7f;
+
+NVGpixelBuffer source = { rgba, width, height, 0, 0 };
+int image = 0;
+NVGfilterStatus status = nvgCreateFilteredImageRGBA(
+    vg, &source, 0, filters, 2, &image);
+```
+
+Call upload helpers on the graphics-context thread, preferably between frames. The source pixels are not retained. Delete a successful image with `nvgDeleteImage()`.
+
+## Decode, filter, and upload a file
+
+```c
+int nvgCreateFilteredImage(
+    NVGcontext* ctx,
+    const char* filename,
+    int imageFlags,
+    const NVGfilter* filters,
+    int filterCount);
+```
+
+Decodes `filename` to straight-alpha RGBA8 with stb_image, runs the filter chain, uploads the result, frees the temporary decoded pixels, and returns the image handle. It returns `0` for an invalid argument, decode failure, invalid filter, allocation failure, or upload failure.
+
+This function is compiled only when NanoVG is built without `NVG_NO_STB`.
+
+## Decode, filter, and upload memory
+
+```c
+int nvgCreateFilteredImageMem(
+    NVGcontext* ctx,
+    int imageFlags,
+    const unsigned char* data,
+    int ndata,
+    const NVGfilter* filters,
+    int filterCount);
+```
+
+Decodes `ndata` encoded bytes, filters them, and uploads the result. The encoded input is not retained, and temporary decoded pixels are freed before return. The return value is a nonzero image handle on success or `0` on any failure.
+
+This function also requires the stb_image integration and is omitted from the implementation under `NVG_NO_STB`.
+
+## Common mistakes
+
+- Constructing `NVGfilter` manually and leaving unrelated fields uninitialized instead of calling `nvgFilterInit()`.
+- Giving source and destination different dimensions or an undersized stride.
+- Passing a negative filter count, more than 256 stages, or a null filter array with a positive count.
+- Using an even convolution dimension or expecting the kernel to be automatically normalized.
+- Forgetting to match `NVG_IMAGE_PREMULTIPLIED` to the alpha representation expected for the uploaded image.
+- Running an upload helper on a worker thread that does not own the graphics context.
+- Filtering every frame even though neither the source nor parameters changed.
+
+See [CPU image filters](/guides/image-filters) for task-oriented examples and [Images](/reference/images) for image ownership and drawing.

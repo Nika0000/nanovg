@@ -9,11 +9,10 @@ NanoVG is small antialiased vector graphics rendering library for OpenGL. It has
 > For the official upstream NanoVG source, prefer:
 > [memononen/nanovg](https://github.com/memononen/nanovg)
 
-## Playground
+## Documentation
 
-[![playground](https://github.com/user-attachments/assets/c0675fd2-e816-4ef7-9090-7e4805ba79e0)](https://nika0000.github.io/nanovg/)
-
-Browser [playground](https://nika0000.github.io/nanovg/) for this fork, JS mirrors the C API 1:1. Build/run locally: [`playground/README.md`](/playground/README.md).
+The [documentation](https://nika0000.github.io/nanovg/docs/) includes API references, guides, and live C++ examples compiled in your browser.
+For local development and build instructions, see [docs/site/README.md](docs/site/README.md).
 
 Usage
 =====

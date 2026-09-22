@@ -1,0 +1,19 @@
+{
+  "title": "NanoVG",
+  "pages": [
+    "---Start---",
+    "index",
+    "getting-started",
+    "---Learn---",
+    "concepts",
+    "guides",
+    "---Platforms---",
+    "backends",
+    "---Reference---",
+    "reference",
+    "---Project---",
+    "troubleshooting",
+    "compatibility",
+    "contributing"
+  ]
+}

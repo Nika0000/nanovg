@@ -1,0 +1,10 @@
+---
+title: Core concepts
+description: Understand NanoVG's frame, state, and path model before building larger drawings.
+---
+
+NanoVG is an immediate-mode drawing API. The application describes the current frame from top to bottom, while NanoVG stores temporary drawing state and batches work for the selected renderer.
+
+Start with the [drawing lifecycle](/concepts/drawing-lifecycle) to understand frames and saved state. Then read [paths and winding](/concepts/paths-and-winding) for the rules behind filled and stroked geometry.
+
+These concepts are shared by every renderer backend.

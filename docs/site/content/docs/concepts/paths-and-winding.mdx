@@ -1,0 +1,54 @@
+---
+title: Paths and winding
+description: Build paths, combine subpaths, and create holes with NanoVG's winding rules.
+---
+
+A NanoVG path contains one or more subpaths. Start from an empty path, add geometry, then fill or stroke it with the current style.
+
+## Build a path
+
+```c
+nvgBeginPath(vg);
+nvgMoveTo(vg, 20.0f, 80.0f);
+nvgLineTo(vg, 60.0f, 20.0f);
+nvgLineTo(vg, 100.0f, 80.0f);
+nvgClosePath(vg);
+
+nvgFillColor(vg, nvgRGB(245, 158, 11));
+nvgFill(vg);
+```
+
+`nvgMoveTo()` starts a subpath. Line, Bézier, quadratic, and arc commands extend it. `nvgClosePath()` connects the final point to the first point of the current subpath.
+
+Convenience functions such as `nvgRect()`, `nvgRoundedRect()`, `nvgCircle()`, and `nvgEllipse()` add complete subpaths to the current path.
+
+## Fill and stroke
+
+`nvgFill()` covers the interior of every subpath using the current fill color or paint. `nvgStroke()` draws their outlines using the current stroke style. The same path can be filled and stroked before the next `nvgBeginPath()`:
+
+```c
+nvgBeginPath(vg);
+nvgRoundedRect(vg, 20.0f, 20.0f, 160.0f, 56.0f, 8.0f);
+nvgFillColor(vg, nvgRGB(30, 41, 59));
+nvgFill(vg);
+nvgStrokeWidth(vg, 2.0f);
+nvgStrokeColor(vg, nvgRGB(148, 163, 184));
+nvgStroke(vg);
+```
+
+## Create a hole
+
+NanoVG uses an even-odd fill rule. Mark the subpath representing a hole immediately after creating it:
+
+```c
+nvgBeginPath(vg);
+nvgRect(vg, 10.0f, 10.0f, 180.0f, 120.0f);
+nvgCircle(vg, 100.0f, 70.0f, 32.0f);
+nvgPathWinding(vg, NVG_HOLE);
+nvgFillColor(vg, nvgRGB(59, 130, 246));
+nvgFill(vg);
+```
+
+`nvgPathWinding()` applies to the current subpath. Calling it before adding the intended hole or after starting another subpath changes the wrong geometry.
+
+Use `NVG_SOLID` for solid regions and `NVG_HOLE` for cutouts. The direction constants `NVG_CCW` and `NVG_CW` are available when explicit contour direction is more appropriate.

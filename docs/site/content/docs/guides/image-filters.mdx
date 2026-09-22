@@ -1,0 +1,101 @@
+---
+title: CPU image filters
+description: Process RGBA8 pixels through filter chains and optionally upload the result as a NanoVG image.
+---
+
+NanoVG includes synchronous CPU filters for RGBA8 pixel buffers. They can run without a graphics context, or filter and upload pixels into a normal NanoVG image.
+
+## Filter and upload
+
+```c
+NVGpixelBuffer source = {0};
+NVGfilter filters[2];
+int image = 0;
+
+source.data = rgba;
+source.width = width;
+source.height = height;
+
+filters[0] = nvgFilterInit(NVG_FILTER_GAUSSIAN_BLUR);
+filters[0].sigma = 2.0f;
+filters[1] = nvgFilterInit(NVG_FILTER_GRAYSCALE);
+filters[1].amount = 0.7f;
+
+NVGfilterStatus status = nvgCreateFilteredImageRGBA(
+    vg, &source, 0, filters, 2, &image);
+if (status != NVG_FILTER_OK) {
+    /* image is set to 0 on failure. */
+}
+```
+
+Draw the returned handle with `nvgImagePattern()` and release it with `nvgDeleteImage()`. Source pixels remain caller-owned. Filter and upload when the source or parameters change rather than on every frame.
+
+## Filter without a graphics context
+
+Provide source and destination buffers with equal dimensions:
+
+```c
+NVGpixelBuffer source = { rgba, width, height, 0, 0 };
+NVGpixelBuffer destination = { output, width, height, 0, 0 };
+NVGfilter filter = nvgFilterInit(NVG_FILTER_GRAYSCALE);
+
+NVGfilterStatus status = nvgFilterRGBA(&source, &destination, &filter, 1);
+```
+
+A zero stride selects tightly packed RGBA8. Explicit strides are nonnegative byte counts. In-place and partially overlapping buffers are supported. Invalid input or allocation failure leaves the destination untouched.
+
+Pure `nvgFilterRGBA()` calls can run on worker threads when every call owns its buffers and descriptors. Upload helpers require the graphics-context thread.
+
+## Available filters
+
+Always initialize each stage with `nvgFilterInit(type)` before changing its parameters.
+
+| Type | Main parameters |
+| --- | --- |
+| `NVG_FILTER_GRAYSCALE` | `amount` from 0 to 1 |
+| `NVG_FILTER_BRIGHTNESS_CONTRAST` | `brightness` from -1 to 1; `contrast` from 0 to 10000 |
+| `NVG_FILTER_BOX_BLUR` | `radiusX` and `radiusY` from 0 to 128 |
+| `NVG_FILTER_GAUSSIAN_BLUR` | `sigma` greater than 0 and at most 42 |
+| `NVG_FILTER_SHARPEN` | `amount` from 0 to 10000 |
+| `NVG_FILTER_UNSHARP_MASK` | `sigma` and `amount` |
+| `NVG_FILTER_SOBEL` | Gradient magnitude multiplied by `amount` |
+| `NVG_FILTER_CONVOLUTION` | Odd kernel dimensions from 1 to 31, coefficients, divisor, and bias |
+
+Stages execute in array order. A chain may contain at most 256 filters.
+
+## Custom convolution
+
+```c
+const float laplacian[] = {
+     0.0f, -1.0f,  0.0f,
+    -1.0f,  4.0f, -1.0f,
+     0.0f, -1.0f,  0.0f,
+};
+
+NVGfilter edge = nvgFilterInit(NVG_FILTER_CONVOLUTION);
+edge.kernel = laplacian;
+edge.kernelWidth = 3;
+edge.kernelHeight = 3;
+```
+
+Kernel application uses correlation, so coefficients are not flipped. Kernel storage must remain valid until the synchronous call returns. NanoVG does not automatically divide by the coefficient sum; zero-sum edge kernels work with the default divisor of `1`.
+
+## Borders, alpha, and precision
+
+All filters support clamp, repeat, mirror, and transparent border modes. Output dimensions do not change, so effects extending beyond the source are clipped.
+
+Filtering operates in encoded RGB space without automatic sRGB linearization. Blur uses premultiplied RGB and alpha to avoid hidden colors bleeding across transparent edges. Color adjustments, sharpening, Sobel, and custom kernels preserve the center alpha. Intermediate values are floating point and are clamped and quantized only when RGBA8 output is written.
+
+The API processes caller-supplied pixels. It does not read back an existing NanoVG image, apply a GPU post-processing pass, or implement whole-scene backdrop effects.
+
+## Visual example
+
+On Windows, build the Direct3D 11 comparison program:
+
+```powershell
+cmake -S . -B build/filter-demo -DNANOVG_BUILD_EXAMPLES=ON
+cmake --build build/filter-demo --config Release --target example_filters
+.\build\filter-demo\Release\example_filters.exe
+```
+
+The executable compares the original with grayscale, brightness and contrast, blur, sharpening, Sobel, and custom convolution results.

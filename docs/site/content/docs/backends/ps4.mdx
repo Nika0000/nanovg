@@ -1,0 +1,17 @@
+---
+title: PlayStation 4
+description: Understand the limited PlayStation 4 assets exposed by this public repository.
+---
+
+The public PlayStation 4 portion of this repository contains precompiled NanoVG vertex and fragment shader byte arrays. Enable their implementation source with:
+
+```sh
+cmake -S . -B build -DNANOVG_PLATFORM_PS4=ON
+cmake --build build --config Release
+```
+
+This adds `src/ps4/nanovg_ps4.c`, which defines `PS4_SHADER_VERT` and `PS4_SHADER_FRAG` declared by `nanovg_ps4.h`.
+
+The public header does not expose a complete renderer context constructor, frame-binding API, or standalone example. A usable integration therefore requires additional platform renderer code and a licensed PlayStation development environment outside this repository.
+
+Treat this option as shader asset support rather than a complete drop-in backend. Keep platform SDK details in licensed project documentation and do not assume the OpenGL constructor pattern applies here.

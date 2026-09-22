@@ -1,0 +1,16 @@
+{
+  "title": "API reference",
+  "pages": [
+    "index",
+    "context",
+    "state",
+    "paths",
+    "paints",
+    "transforms",
+    "images",
+    "text",
+    "image-filters",
+    "framebuffer-utilities",
+    "renderer-creation"
+  ]
+}

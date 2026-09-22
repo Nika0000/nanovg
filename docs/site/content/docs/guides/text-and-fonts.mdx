@@ -1,0 +1,75 @@
+---
+title: Text and fonts
+description: Load fonts, render aligned text, wrap paragraphs, and measure text layout.
+---
+
+NanoVG loads TrueType and TrueType Collection font data into the current context. Load fonts after creating the context and check for failure before drawing text.
+
+## Load a font
+
+```c
+int regular = nvgCreateFont(vg, "sans", "assets/Roboto-Regular.ttf");
+if (regular == -1) {
+    /* Report the missing or invalid font. */
+}
+```
+
+The name is local to the NanoVG context. Select the font later by name or handle:
+
+```c
+nvgFontFace(vg, "sans");
+/* or: nvgFontFaceId(vg, regular); */
+```
+
+`nvgCreateFontMem()` loads from memory. Its `freeData` argument controls whether NanoVG takes responsibility for freeing that buffer, so pass ownership deliberately.
+
+## Draw one line
+
+```c
+nvgFontFace(vg, "sans");
+nvgFontSize(vg, 20.0f);
+nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+nvgFillColor(vg, nvgRGB(241, 245, 249));
+nvgText(vg, 24.0f, 48.0f, "Hello, NanoVG", NULL);
+```
+
+Horizontal alignment uses `NVG_ALIGN_LEFT`, `NVG_ALIGN_CENTER`, or `NVG_ALIGN_RIGHT`. Combine one with `NVG_ALIGN_TOP`, `NVG_ALIGN_MIDDLE`, `NVG_ALIGN_BOTTOM`, or `NVG_ALIGN_BASELINE`.
+
+Text currently supports solid fill colors. Paint fills are not used for glyph rendering.
+
+## Wrap text
+
+```c
+nvgFontFace(vg, "sans");
+nvgFontSize(vg, 16.0f);
+nvgTextLineHeight(vg, 1.35f);
+nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_TOP);
+nvgTextBox(vg, 24.0f, 24.0f, 320.0f, paragraph, NULL);
+```
+
+`nvgTextBox()` wraps at word boundaries and explicit newlines. Long words are split at a character boundary without hyphenation.
+
+## Measure before drawing
+
+`nvgTextBounds()` returns the horizontal advance and optionally writes `[xmin, ymin, xmax, ymax]`:
+
+```c
+float bounds[4];
+float advance = nvgTextBounds(vg, x, y, label, NULL, bounds);
+```
+
+Use `nvgTextBoxBounds()` for wrapped text, `nvgTextMetrics()` for ascender, descender, and line height, and `nvgTextGlyphPositions()` for cursor or hit-testing logic.
+
+Measurements are returned in local coordinates. NanoVG accounts for the active scale when snapping glyphs, but does not rotate or scale the returned coordinate values.
+
+## Fallback fonts
+
+Load both faces, then attach a fallback for missing glyphs:
+
+```c
+int sans = nvgCreateFont(vg, "sans", "assets/Roboto-Regular.ttf");
+int emoji = nvgCreateFont(vg, "emoji", "assets/NotoEmoji-Regular.ttf");
+nvgAddFallbackFontId(vg, sans, emoji);
+```
+
+Both font handles belong to the same context.

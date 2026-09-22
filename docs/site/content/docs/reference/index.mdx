@@ -1,0 +1,21 @@
+---
+title: API reference
+description: Find NanoVG types, constants, and functions grouped by drawing task.
+---
+
+The public drawing API is declared in `include/nanovg/nanovg.h`. Renderer constructors and helpers live in their backend headers.
+
+| Area | Contents |
+| --- | --- |
+| [Context and frames](/reference/context) | Frame lifecycle and compositing |
+| [State stack](/reference/state) | Save, restore, clipping, and global alpha |
+| [Paths](/reference/paths) | Path construction, fills, and strokes |
+| [Paints and colors](/reference/paints) | Colors, gradients, patterns, and stroke style |
+| [Transforms](/reference/transforms) | Current transform and standalone matrix helpers |
+| [Images](/reference/images) | Image creation, update, query, and deletion |
+| [Text and fonts](/reference/text) | Font loading, text drawing, and measurement |
+| [Image filters](/reference/image-filters) | CPU filtering and filtered image creation |
+| [Framebuffer utilities](/reference/framebuffer-utilities) | OpenGL and Metal offscreen targets |
+| [Renderer creation](/reference/renderer-creation) | Backend constructors and destructors |
+
+Functions under the internal render API section of `nanovg.h` are backend plumbing and are not part of the ordinary application-facing API.

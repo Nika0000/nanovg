@@ -1,0 +1,32 @@
+---
+title: Documentation development
+description: Preview, validate, and extend the Fumadocs site.
+---
+
+Documentation source lives under `docs/site/content/docs`. Folder `meta.json` files control navigation order.
+
+```sh
+cd docs/site
+npm ci
+npm run dev
+```
+
+Open `http://localhost:3000`. Before committing:
+
+```sh
+npm run typecheck
+npm run check:links
+npm run build
+```
+
+Every page needs a clear frontmatter title and description. These fields appear in navigation and the automatically generated `llms.txt` index.
+
+Use root-relative links for site pages, such as `/guides/images`. The production build applies the GitHub Pages base path. Link directly to repository files only when the source itself is the subject.
+
+## Live C++ examples
+
+Use the globally available `<LiveExample code={source} />` component in MDX. Supply a complete C++17 translation unit that includes `nanovg.h` and defines `void draw(NVGcontext* vg, float width, float height, float time)`. Includes, helper functions, loops, and standard-library types are compiled in the browser. The host manages the context and frame lifecycle.
+
+The `sans` font, `/Roboto-Regular.ttf`, and `/image1.jpg` are bundled. Run compiles the example; Stop terminates its workers; Reset restores the original source. The first run downloads the compiler and may reload once to enable the isolation required on GitHub Pages. Sources and compiler assets are staged automatically by `npm run dev` and `npm run build`. No local Emscripten installation is needed.
+
+Examples should use exact public names and state prerequisites, ownership, failure results, and cleanup. Update `DOCUMENTATION_PLAN.md` when a planned page is completed or the information architecture changes.

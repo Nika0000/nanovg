@@ -1,0 +1,241 @@
+---
+title: Transforms
+description: Reference for NanoVG's current coordinate transform and standalone matrix helpers.
+---
+
+import { transformsExample } from "@/lib/live-examples";
+
+NanoVG stores affine matrices as six floats representing `[a b c d e f]`, equivalent to rows `[a c e]`, `[b d f]`, and `[0 0 1]`.
+
+For a point `(x, y)`, the transformed coordinates are:
+
+```text
+x' = x * a + y * c + e
+y' = x * b + y * d + f
+```
+
+The identity matrix is `[1, 0, 0, 1, 0, 0]`. NanoVG does not reject non-finite transform values, so pass finite numbers and avoid singular scales unless they are intentional.
+
+<LiveExample code={transformsExample} />
+
+## Current transform
+
+```c
+void nvgResetTransform(NVGcontext* ctx);
+void nvgTransform(NVGcontext* ctx, float a, float b, float c, float d, float e, float f);
+void nvgTranslate(NVGcontext* ctx, float x, float y);
+void nvgRotate(NVGcontext* ctx, float angle);
+void nvgSkewX(NVGcontext* ctx, float angle);
+void nvgSkewY(NVGcontext* ctx, float angle);
+void nvgScale(NVGcontext* ctx, float x, float y);
+void nvgCurrentTransform(NVGcontext* ctx, float transform[6]);
+```
+
+Transform operations premultiply the current transform. Rotation and skew angles are radians. The transform is part of saved state.
+
+### Isolate a component transform
+
+Use `nvgSave()` and `nvgRestore()` when a transform should affect only one object or group:
+
+```c
+nvgSave(vg);
+nvgTranslate(vg, cardX, cardY);
+nvgRotate(vg, nvgDegToRad(8.0f));
+
+nvgBeginPath(vg);
+nvgRoundedRect(vg, 0.0f, 0.0f, 180.0f, 96.0f, 8.0f);
+nvgFillColor(vg, nvgRGBA(35, 40, 52, 255));
+nvgFill(vg);
+
+nvgRestore(vg);
+```
+
+`nvgRestore()` restores the transform along with the rest of the graphics state.
+
+### `nvgResetTransform`
+
+```c
+void nvgResetTransform(NVGcontext* ctx);
+```
+
+Replaces the current transform with the identity matrix. It does not clear paths or reset any other graphics state.
+
+Path coordinates are transformed when their commands are appended. Resetting the transform therefore does not modify geometry already added to the current path.
+
+### `nvgTransform`
+
+```c
+void nvgTransform(NVGcontext* ctx, float a, float b, float c, float d, float e, float f);
+```
+
+Premultiplies the current transform by the supplied affine matrix. This is the general form behind the translate, rotate, skew, and scale helpers.
+
+### `nvgTranslate`
+
+```c
+void nvgTranslate(NVGcontext* ctx, float x, float y);
+```
+
+Moves the local origin by `(x, y)`.
+
+### `nvgRotate`
+
+```c
+void nvgRotate(NVGcontext* ctx, float angle);
+```
+
+Rotates local coordinates around the current origin. `angle` is in radians; use `nvgDegToRad()` when the source value is in degrees.
+
+To rotate around a point, translate that point to the origin, rotate, then draw in coordinates relative to it:
+
+```c
+nvgTranslate(vg, pivotX, pivotY);
+nvgRotate(vg, nvgDegToRad(30.0f));
+nvgRect(vg, -width * 0.5f, -height * 0.5f, width, height);
+```
+
+### `nvgSkewX` and `nvgSkewY`
+
+```c
+void nvgSkewX(NVGcontext* ctx, float angle);
+void nvgSkewY(NVGcontext* ctx, float angle);
+```
+
+Skew local coordinates along one axis. Angles are in radians. Internally the skew factor is `tan(angle)`, so values close to odd multiples of `π / 2` become extremely large.
+
+### `nvgScale`
+
+```c
+void nvgScale(NVGcontext* ctx, float x, float y);
+```
+
+Scales local coordinates independently on each axis. Negative values mirror the coordinate system. A zero component makes the transform singular and prevents it from being inverted.
+
+### `nvgCurrentTransform`
+
+```c
+void nvgCurrentTransform(NVGcontext* ctx, float transform[6]);
+```
+
+Copies the current six-float matrix into caller-owned storage. Passing a null destination is a no-op.
+
+## Standalone matrix helpers
+
+```c
+void nvgTransformIdentity(float* dst);
+void nvgTransformTranslate(float* dst, float tx, float ty);
+void nvgTransformScale(float* dst, float sx, float sy);
+void nvgTransformRotate(float* dst, float angle);
+void nvgTransformSkewX(float* dst, float angle);
+void nvgTransformSkewY(float* dst, float angle);
+void nvgTransformMultiply(float* dst, const float* src);
+void nvgTransformPremultiply(float* dst, const float* src);
+int nvgTransformInverse(float* dst, const float* src);
+void nvgTransformPoint(float* dx, float* dy, const float* transform, float sx, float sy);
+float nvgDegToRad(float degrees);
+float nvgRadToDeg(float radians);
+```
+
+`nvgTransformInverse()` returns `0` when the matrix cannot be inverted and `1` on success.
+
+These helpers operate on six-float arrays without changing an `NVGcontext`.
+
+## Matrix constructors
+
+```c
+void nvgTransformIdentity(float* dst);
+void nvgTransformTranslate(float* dst, float tx, float ty);
+void nvgTransformScale(float* dst, float sx, float sy);
+void nvgTransformRotate(float* dst, float angle);
+void nvgTransformSkewX(float* dst, float angle);
+void nvgTransformSkewY(float* dst, float angle);
+```
+
+Each constructor overwrites all six elements of `dst`. Rotation and skew angles use radians.
+
+## Matrix composition
+
+```c
+void nvgTransformMultiply(float* dst, const float* src);
+void nvgTransformPremultiply(float* dst, const float* src);
+```
+
+The functions update `dst` in place:
+
+| Function | Result |
+| --- | --- |
+| `nvgTransformMultiply(dst, src)` | `dst = dst * src` |
+| `nvgTransformPremultiply(dst, src)` | `dst = src * dst` |
+
+Because composition order matters, choose the function from the equation you need instead of treating them as interchangeable. For example:
+
+```c
+float transform[6];
+float translation[6];
+
+nvgTransformScale(transform, 2.0f, 3.0f);
+nvgTransformTranslate(translation, 5.0f, 9.0f);
+nvgTransformMultiply(transform, translation); // transform = scale * translation
+```
+
+The current-transform functions use premultiplication internally.
+
+## Inverting a transform
+
+```c
+int nvgTransformInverse(float* dst, const float* src);
+```
+
+Writes the inverse of `src` to `dst` and returns `1`. When the determinant is within `1e-6` of zero, NanoVG writes the identity matrix to `dst` and returns `0`.
+
+Always check the return value. Otherwise, a failed inverse silently behaves like an identity transform:
+
+```c
+float worldFromLocal[6];
+float localFromWorld[6];
+float localX, localY;
+
+nvgCurrentTransform(vg, worldFromLocal);
+if (nvgTransformInverse(localFromWorld, worldFromLocal)) {
+    nvgTransformPoint(&localX, &localY, localFromWorld, pointerX, pointerY);
+    // Test localX and localY against geometry expressed in local coordinates.
+}
+```
+
+This pattern is useful for hit testing transformed controls.
+
+## Transforming a point
+
+```c
+void nvgTransformPoint(float* dx, float* dy, const float* transform, float sx, float sy);
+```
+
+Applies `transform` to `(sx, sy)` and writes the result through `dx` and `dy`. Both output pointers must be valid.
+
+## Angle conversion
+
+```c
+float nvgDegToRad(float degrees);
+float nvgRadToDeg(float radians);
+```
+
+These helpers convert between degrees and radians. NanoVG transform angles are radians.
+
+## When transforms take effect
+
+| Operation | Transform captured or applied |
+| --- | --- |
+| Path commands such as `nvgMoveTo()` and `nvgRect()` | When the command is appended |
+| Paint assignment with `nvgFillPaint()` or `nvgStrokePaint()` | When the paint is assigned |
+| `nvgScissor()` and `nvgIntersectScissor()` | When the scissor is set |
+| Text drawing | When text is drawn |
+
+Set the intended transform before each of these operations. Changing the transform later does not retroactively move path commands, paints, or scissors already stored.
+
+## Common mistakes
+
+- Applying transforms every frame without first restoring or resetting the state, causing them to accumulate.
+- Passing degrees directly to rotation or skew functions.
+- Reversing multiplication order when composing standalone matrices.
+- Ignoring a failed `nvgTransformInverse()` call.
+- Scaling an axis to zero and later expecting the transform to be invertible.

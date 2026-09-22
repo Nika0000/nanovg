@@ -1,0 +1,28 @@
+---
+title: Changelog and compatibility
+description: Understand this fork's relationship to upstream NanoVG and track compatibility-sensitive areas.
+---
+
+This repository collects NanoVG ports and related implementations. It is not the canonical upstream repository. For upstream OpenGL NanoVG, see [memononen/nanovg](https://github.com/memononen/nanovg).
+
+## Compatibility expectations
+
+The shared path, paint, image, and text API remains broadly compatible with NanoVG. This fork also contains extensions and backend-specific behavior, including:
+
+- Direct3D 11, Vulkan, Metal, WebGPU, deko3d, and PlayStation 4-related code.
+- CPU image filters and `NVGpixelBuffer`/`NVGfilter` types.
+- Additional line styles, font dilation and quality controls, and stencil helpers.
+- Embedded C++ examples compiled against this repository's public header and source.
+
+Do not assume an extension in this fork exists in upstream NanoVG or another port. Likewise, backend-specific texture handles and flags are not portable between renderers.
+
+## Areas sensitive to change
+
+- Public structure layouts and enum numeric values
+- Renderer callback and native create-info structures
+- Alpha representation and image ownership flags
+- Font-memory ownership through `freeData`
+- Render-target formats, stencil behavior, and synchronization
+- Browser preview host and compiler integration
+
+Compatibility-affecting changes should describe the old behavior, new behavior, migration steps, and first revision containing the change. Until a dedicated release changelog is maintained, use the repository history and pull requests as the authoritative change record.

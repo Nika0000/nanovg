@@ -1,0 +1,47 @@
+---
+title: WebGPU
+description: Integrate NanoVG with Dawn, wgpu-native, or Emscripten's standard WebGPU C API.
+---
+
+Include the WebGPU implementation's standard C `webgpu.h` before the NanoVG backend. Define the implementation in one translation unit:
+
+```c
+#include <webgpu/webgpu.h>
+#include <nanovg/nanovg.h>
+
+#define NANOVG_WGPU_IMPLEMENTATION
+#include <nanovg/nanovg_wgpu.h>
+```
+
+The exact WebGPU header path can differ between distributions.
+
+## Create the context
+
+```c
+WGPUNVGCreateInfo info = {0};
+info.device = device;
+info.queue = queue;
+info.colorFormat = surfaceFormat;
+info.depthStencilFormat = WGPUTextureFormat_Depth24PlusStencil8;
+
+NVGcontext* vg = nvgCreateWgpu(info, NVG_ANTIALIAS | NVG_STENCIL_STROKES);
+```
+
+The device and queue are borrowed and must outlive the NanoVG context.
+
+## Bind the render pass every frame
+
+Begin an application-owned pass with one color attachment and a depth-stencil attachment matching the creation format. Clear stencil to zero, then bind the pass before any NanoVG drawing call:
+
+```c
+nvgWgpuBindRenderPass(vg, pass);
+nvgBeginFrame(vg, windowWidth, windowHeight, pixelRatio);
+drawUi(vg);
+nvgEndFrame(vg);
+```
+
+Binding only immediately before `nvgEndFrame()` is too late. NanoVG may flush early when the font atlas grows.
+
+End the pass, finish and submit the command buffer, and present through the host application. `nvgStencil()` and `nvgStencilClear()` are not implemented by this backend.
+
+Enable `NANOVG_PLATFORM_WEBGPU=ON` to configure `example_wgpu`; point `CMAKE_PREFIX_PATH` at an installed Dawn package or set `NANOVG_WEBGPU_TARGET` for another implementation.

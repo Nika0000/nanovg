@@ -1,0 +1,365 @@
+---
+title: Paths
+description: Detailed reference for constructing, combining, filling, and stroking NanoVG paths.
+---
+
+import { pathsExample } from "@/lib/live-examples";
+
+A path is a temporary collection of one or more subpaths. A subpath may be open or closed and may represent a solid contour or a hole. The normal sequence is:
+
+```c
+nvgBeginPath(vg);       /* Discard the previous path. */
+nvgMoveTo(vg, 20, 20); /* Begin one subpath. */
+nvgLineTo(vg, 120, 20);
+nvgLineTo(vg, 70, 100);
+nvgClosePath(vg);
+
+nvgFillColor(vg, nvgRGB(14, 165, 233));
+nvgFill(vg);
+```
+
+Coordinates are transformed when each command is appended. Changing the transform later does not move geometry already in the path.
+
+<LiveExample code={pathsExample} />
+
+## `nvgBeginPath`
+
+```c
+void nvgBeginPath(NVGcontext* ctx);
+```
+
+Clears all path commands and cached tessellation in the context. Call it before constructing each independent shape or batch of subpaths.
+
+It does not reset fill, stroke, transform, scissor, alpha, composite, or text state. It also does not start a subpath; follow it with `nvgMoveTo()` or a complete shape helper.
+
+Calling `nvgBeginPath()` after `nvgFill()` or `nvgStroke()` is what discards that geometry. Until then, the same path can be rendered again with another style.
+
+## `nvgMoveTo`
+
+```c
+void nvgMoveTo(NVGcontext* ctx, float x, float y);
+```
+
+Starts a new subpath at `(x, y)` without drawing a segment. It also establishes the current point used by subsequent line and curve commands.
+
+Use another `nvgMoveTo()` to add a disconnected contour to the same path:
+
+```c
+nvgBeginPath(vg);
+
+nvgMoveTo(vg, 10, 10);
+nvgLineTo(vg, 60, 10);
+
+nvgMoveTo(vg, 10, 30);
+nvgLineTo(vg, 60, 30);
+
+nvgStroke(vg);
+```
+
+## `nvgLineTo`
+
+```c
+void nvgLineTo(NVGcontext* ctx, float x, float y);
+```
+
+Adds a straight segment from the current point to `(x, y)`, then makes the destination the new current point.
+
+Begin the subpath with `nvgMoveTo()`. A line without a defined current point does not express a complete, portable contour.
+
+## `nvgBezierTo`
+
+```c
+void nvgBezierTo(
+    NVGcontext* ctx,
+    float control1X,
+    float control1Y,
+    float control2X,
+    float control2Y,
+    float x,
+    float y);
+```
+
+Adds a cubic Bézier curve from the current point to `(x, y)). The first control point shapes the curve as it leaves the current point; the second shapes its approach to the destination.
+
+```c
+nvgBeginPath(vg);
+nvgMoveTo(vg, 20, 100);
+nvgBezierTo(vg, 60, 20, 140, 180, 180, 100);
+nvgStroke(vg);
+```
+
+The destination becomes the current point. Control points do not.
+
+## `nvgQuadTo`
+
+```c
+void nvgQuadTo(
+    NVGcontext* ctx,
+    float controlX,
+    float controlY,
+    float x,
+    float y);
+```
+
+Adds a quadratic Bézier curve from the current point through one control point to `(x, y)). Internally, NanoVG converts it to an equivalent cubic Bézier.
+
+A valid current point is required. Always precede the first quadratic segment with `nvgMoveTo()`.
+
+## `nvgArcTo`
+
+```c
+void nvgArcTo(
+    NVGcontext* ctx,
+    float x1,
+    float y1,
+    float x2,
+    float y2,
+    float radius);
+```
+
+Rounds the corner formed by the current point, `(x1, y1)`, and `(x2, y2)). NanoVG computes an arc tangent to the two line directions.
+
+```c
+nvgBeginPath(vg);
+nvgMoveTo(vg, 20, 20);
+nvgArcTo(vg, 120, 20, 120, 100, 16);
+nvgLineTo(vg, 120, 100);
+nvgStroke(vg);
+```
+
+If there is no path command, the function does nothing. Degenerate geometry, nearly collinear segments, a radius below the current distance tolerance, or an impractically distant tangent falls back to a line ending at `(x1, y1)`.
+
+Use a nonnegative finite radius. This function rounds a corner between segments; use `nvgArc()` when the center and angles are known directly.
+
+## `nvgClosePath`
+
+```c
+void nvgClosePath(NVGcontext* ctx);
+```
+
+Marks the current subpath closed and connects its last point to its first during tessellation.
+
+Closing affects stroke joins and caps as well as filling. A closed stroke joins the last and first segments; an open stroke uses the selected line caps at both ends.
+
+The current path remains available for fill or stroke after closing.
+
+## `nvgPathWinding`
+
+```c
+void nvgPathWinding(NVGcontext* ctx, int directionOrSolidity);
+```
+
+Sets the winding of the current subpath. Call it immediately after constructing the contour it should affect.
+
+Accepted aliases are:
+
+| Value | Meaning |
+| --- | --- |
+| `NVG_CCW` | Counter-clockwise contour; solid by convention. |
+| `NVG_CW` | Clockwise contour; hole by convention. |
+| `NVG_SOLID` | Alias of `NVG_CCW`. |
+| `NVG_HOLE` | Alias of `NVG_CW`. |
+
+NanoVG uses an even-odd fill rule. The explicit winding lets common shape helpers, which create solid contours, be reclassified as holes:
+
+```c
+nvgBeginPath(vg);
+nvgRect(vg, 10, 10, 180, 120);
+
+nvgCircle(vg, 100, 70, 32);
+nvgPathWinding(vg, NVG_HOLE);
+
+nvgFill(vg);
+```
+
+Calling `nvgPathWinding()` before the target contour exists or after starting the next contour applies it to the wrong subpath.
+
+## `nvgArc`
+
+```c
+void nvgArc(
+    NVGcontext* ctx,
+    float centerX,
+    float centerY,
+    float radius,
+    float startAngle,
+    float endAngle,
+    int direction);
+```
+
+Adds a circular arc using radians and either `NVG_CW` or `NVG_CCW`.
+
+If the path is empty, NanoVG moves to the arc's first point. If commands already exist, it adds a line from the current point to the arc's first point before appending the curve. Use `nvgMoveTo()` first when the arc must start a disconnected subpath inside a nonempty path.
+
+Sweeps are normalized to the requested direction and limited to one full revolution. NanoVG approximates the arc with cubic Bézier segments of at most roughly 90 degrees.
+
+```c
+nvgBeginPath(vg);
+nvgArc(vg, 80, 80, 40, nvgDegToRad(0), nvgDegToRad(270), NVG_CW);
+nvgStroke(vg);
+```
+
+## `nvgRect`
+
+```c
+void nvgRect(
+    NVGcontext* ctx,
+    float x,
+    float y,
+    float width,
+    float height);
+```
+
+Adds a closed rectangular subpath. `(x, y)` is its starting corner. Width extends along X and height along Y; negative dimensions reverse those directions.
+
+The helper does not clear the current path. Call `nvgBeginPath()` first for an independent rectangle.
+
+## `nvgRoundedRect`
+
+```c
+void nvgRoundedRect(
+    NVGcontext* ctx,
+    float x,
+    float y,
+    float width,
+    float height,
+    float radius);
+```
+
+Adds a closed rectangle with the same corner radius on all four corners. It delegates to `nvgRoundedRectVarying()`.
+
+The effective radius is limited independently to half the absolute width and half the absolute height, preventing a corner from extending beyond the rectangle.
+
+## `nvgRoundedRectVarying`
+
+```c
+void nvgRoundedRectVarying(
+    NVGcontext* ctx,
+    float x,
+    float y,
+    float width,
+    float height,
+    float radiusTopLeft,
+    float radiusTopRight,
+    float radiusBottomRight,
+    float radiusBottomLeft);
+```
+
+Adds a closed rounded rectangle with independent corner radii. Argument order follows the corners clockwise from top-left.
+
+Each radius is limited to the rectangle's half-width and half-height. If all four values are below `0.1f`, the implementation emits an ordinary rectangle.
+
+Use nonnegative radii. Negative radius values are not normalized into a documented alternative shape.
+
+## `nvgEllipse`
+
+```c
+void nvgEllipse(
+    NVGcontext* ctx,
+    float centerX,
+    float centerY,
+    float radiusX,
+    float radiusY);
+```
+
+Adds a closed ellipse approximated by four cubic Bézier segments. `radiusX` and `radiusY` are the horizontal and vertical radii.
+
+## `nvgCircle`
+
+```c
+void nvgCircle(
+    NVGcontext* ctx,
+    float centerX,
+    float centerY,
+    float radius);
+```
+
+Adds a closed circle by calling `nvgEllipse()` with equal X and Y radii.
+
+## `nvgFill`
+
+```c
+void nvgFill(NVGcontext* ctx);
+```
+
+Flattens and tessellates the current path, applies the current fill paint, global alpha, composite operation, scissor, and shape-antialias setting, then queues the fill through the renderer.
+
+The fill style is read when `nvgFill()` is called. Path coordinates were already transformed when they were appended. A paint's transform was captured when it was assigned with `nvgFillPaint()`.
+
+The path is not cleared, so it can be stroked immediately afterward:
+
+```c
+nvgBeginPath(vg);
+nvgRoundedRect(vg, 20, 20, 180, 64, 8);
+
+nvgFillColor(vg, nvgRGB(30, 41, 59));
+nvgFill(vg);
+
+nvgStrokeColor(vg, nvgRGB(148, 163, 184));
+nvgStrokeWidth(vg, 2);
+nvgStroke(vg);
+```
+
+Open subpaths are implicitly treated as closed for filling. Close them explicitly when the same geometry will also be stroked and should have a joined final corner.
+
+## `nvgStroke`
+
+```c
+void nvgStroke(NVGcontext* ctx);
+```
+
+Flattens the current path, expands it into stroke geometry, applies the current stroke paint and global alpha, then queues it through the renderer.
+
+Stroke expansion uses:
+
+- `nvgStrokeWidth()`
+- `nvgLineCap()`
+- `nvgLineJoin()`
+- `nvgMiterLimit()`
+- `nvgLineStyle()`
+- `nvgShapeAntiAlias()`
+
+The configured stroke width is scaled by the average scale of the current transform at stroke time and clamped internally to a maximum device-space width of `200`. Subpixel strokes narrower than the antialias fringe are represented by reducing opacity and using a one-fringe-width geometry.
+
+For predictable results, keep the same transform active while constructing and stroking a path. Coordinates capture transforms when appended, while stroke width uses the transform active when `nvgStroke()` runs.
+
+Open subpaths use the current cap style. Closed subpaths join their final and first segments.
+
+## Transform and style timing
+
+This example intentionally keeps geometry, paint, and stroke under one saved transform:
+
+```c
+nvgSave(vg);
+nvgTranslate(vg, x, y);
+nvgScale(vg, scale, scale);
+
+nvgBeginPath(vg);
+nvgRoundedRect(vg, 0, 0, 120, 40, 8);
+
+NVGpaint paint = nvgLinearGradient(
+    vg, 0, 0, 120, 0,
+    nvgRGB(14, 165, 233),
+    nvgRGB(99, 102, 241));
+nvgFillPaint(vg, paint);
+nvgFill(vg);
+
+nvgStrokeWidth(vg, 1.5f);
+nvgStrokeColor(vg, nvgRGBA(255, 255, 255, 128));
+nvgStroke(vg);
+
+nvgRestore(vg);
+```
+
+## Common mistakes
+
+- Omitting `nvgBeginPath()` and unintentionally rendering old subpaths again.
+- Calling a line or curve function before establishing a current point with `nvgMoveTo()`.
+- Expecting a transform change to move path commands already appended.
+- Using `nvgArc()` in a nonempty path without accounting for its connecting line.
+- Applying `nvgPathWinding()` to the wrong subpath.
+- Expecting `nvgClosePath()` to clear or render the path.
+- Changing the transform between path construction and `nvgStroke()`, which changes device-space stroke width.
+- Assuming `nvgFill()` or `nvgStroke()` clears the current path.
+
+See [Paths and winding](/concepts/paths-and-winding), [Drawing shapes](/guides/shapes), and [Paints and colors](/reference/paints) for related examples and style controls.

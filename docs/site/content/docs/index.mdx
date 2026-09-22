@@ -1,0 +1,40 @@
+---
+title: Welcome
+description: Draw antialiased vector graphics with NanoVG across desktop, mobile, console, and web renderers.
+---
+
+import { welcomeExample } from "@/lib/live-examples";
+
+NanoVG is a small C library for drawing antialiased vector graphics. Its immediate-mode API is modeled after the HTML5 Canvas API and is suited to user interfaces, tools, graphs, and other dynamic 2D drawing.
+
+This repository brings the shared NanoVG drawing API together with OpenGL, OpenGL ES, Direct3D 11, Vulkan, Metal, WebGPU, deko3d, and PlayStation 4 renderer implementations. It also includes native examples and editable C++ previews throughout these docs.
+
+<LiveExample code={welcomeExample} height={400} defaultCollapsed />
+
+## Start here
+
+- [Install NanoVG](/getting-started/installation) in an existing CMake project.
+- [Draw your first frame](/getting-started/first-frame) and learn the frame lifecycle.
+- [Choose a renderer](/getting-started/choosing-a-renderer) for your graphics API and platform.
+- [Build the examples](/getting-started/examples) to verify a development environment.
+
+## The drawing model
+
+Create a renderer-specific `NVGcontext`, then issue drawing commands between `nvgBeginFrame()` and `nvgEndFrame()`:
+
+```c
+nvgBeginFrame(vg, windowWidth, windowHeight, devicePixelRatio);
+
+nvgBeginPath(vg);
+nvgRoundedRect(vg, 24.0f, 24.0f, 180.0f, 64.0f, 8.0f);
+nvgFillColor(vg, nvgRGB(255, 192, 0));
+nvgFill(vg);
+
+nvgEndFrame(vg);
+```
+
+All renderers use this drawing API. Only context creation, render-target setup, and presentation differ between backends.
+
+## Project status
+
+This is a collection of NanoVG ports and related implementations. For the official upstream OpenGL project, see [memononen/nanovg](https://github.com/memononen/nanovg). Use this documentation for the code and additional backends contained in this repository.

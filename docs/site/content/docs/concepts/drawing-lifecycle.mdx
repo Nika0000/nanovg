@@ -1,0 +1,64 @@
+---
+title: Drawing lifecycle
+description: Understand frames, batched rendering, and NanoVG's saved drawing state.
+---
+
+NanoVG records drawing commands during a frame and submits the accumulated work when the frame ends. The host application owns the graphics context, destination target, synchronization, and presentation.
+
+## Frame boundaries
+
+Begin and end every NanoVG frame as a pair:
+
+```c
+nvgBeginFrame(vg, windowWidth, windowHeight, devicePixelRatio);
+
+/* Drawing commands belong here. */
+
+nvgEndFrame(vg);
+```
+
+`windowWidth` and `windowHeight` are logical dimensions. `devicePixelRatio` is normally framebuffer width divided by logical window width. A ratio of `2.0f`, for example, means one logical unit spans two framebuffer pixels.
+
+Set up and clear the destination before `nvgBeginFrame()`. Present it after `nvgEndFrame()`. Renderer-specific guides may add a render pass or command-buffer requirement around this sequence.
+
+## Drawing state
+
+The current state includes:
+
+- Fill and stroke styles
+- Stroke width, caps, and joins
+- Global alpha and compositing
+- Transform
+- Scissor rectangle
+- Font and text settings
+
+Changes remain active until replaced, reset, or restored. Isolate a component with `nvgSave()` and `nvgRestore()`:
+
+```c
+nvgSave(vg);
+nvgTranslate(vg, x, y);
+nvgGlobalAlpha(vg, 0.75f);
+drawWidget(vg);
+nvgRestore(vg);
+```
+
+Always balance these calls. `nvgRestore()` returns to the last saved state, while `nvgReset()` resets only the current state and does not remove entries from the stack.
+
+## Paths are separate from state
+
+Call `nvgBeginPath()` before defining a new shape. It clears the current path; it does not reset paint, transform, text, or clipping state.
+
+```c
+nvgBeginPath(vg);
+nvgCircle(vg, 50.0f, 50.0f, 24.0f);
+nvgFillColor(vg, nvgRGB(80, 160, 240));
+nvgFill(vg);
+```
+
+Transforms are applied when path segments, paints, and scissor regions are passed to NanoVG. Saving state before a local transform is therefore a reliable way to draw reusable components.
+
+## Resource lifetime
+
+Create the `NVGcontext` after its graphics device or context exists. Delete NanoVG images with `nvgDeleteImage()` when they are no longer needed, and delete the `NVGcontext` with its matching backend function while the graphics device remains valid.
+
+Fonts and internal font-atlas textures belong to the NanoVG context and are released when the context is deleted.

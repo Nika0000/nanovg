@@ -1,0 +1,19 @@
+---
+title: Adding or changing an API
+description: Update NanoVG's public header, implementation, tests, live examples, and documentation together.
+---
+
+Public drawing APIs begin in `include/nanovg/nanovg.h` and are implemented by `src/nanovg.c`. A change is complete when callers, backends, bindings, tests, and docs agree on its behavior.
+
+## Checklist
+
+1. Add or update declarations and comments in `nanovg.h`.
+2. Implement portable behavior in `src/nanovg.c` or the relevant backend.
+3. Add focused tests for validation, state, ownership, and failure behavior.
+4. Check every renderer callback or structure affected by the change.
+5. Run `npm run build` in `docs/site` to stage the updated public header and implementation for live examples.
+6. Update or add a live example if the change is user-facing.
+7. Update the relevant guide and API-reference page.
+8. Run core tests, affected examples, and docs checks.
+
+Avoid silently changing structure layouts, enum values, ownership rules, or accepted ranges. Record unavoidable compatibility changes in [Changelog and compatibility](/compatibility).

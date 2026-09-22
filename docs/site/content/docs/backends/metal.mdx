@@ -1,0 +1,37 @@
+---
+title: Metal
+description: Build the Objective-C Metal backend and create NanoVG from a CAMetalLayer.
+---
+
+Enable the Metal implementation when configuring CMake:
+
+```sh
+cmake -S . -B build -DNANOVG_PLATFORM_METAL=ON
+cmake --build build --config Release
+```
+
+This enables Objective-C and compiles `src/metal/nanovg_mtl.m` into the `nanovg` target.
+
+## Create the context
+
+Pass a bridged `CAMetalLayer` pointer and buffering flags appropriate to the host:
+
+```c
+NVGcontext* vg = nvgCreateMTL(metalLayer, NVG_ANTIALIAS | NVG_STENCIL_STROKES | NVG_TRIPLE_BUFFER);
+```
+
+The layer is application-owned and must remain valid until `nvgDeleteMTL()`.
+
+The backend exposes bridging helpers for its `MTLDevice`, command queue, texture handles, pixel reads, and target platform. Keep Objective-C ownership rules at the platform boundary when converting these `void*` handles.
+
+## Clear and render
+
+Call `mnvgClearWithColor()` before `nvgEndFrame()` when the next Metal frame should clear through the backend. The ordinary NanoVG drawing sequence remains unchanged.
+
+Metal also provides `mnvgCreateFramebuffer()`, `mnvgBindFramebuffer()`, and `mnvgDeleteFramebuffer()` for offscreen work. See [Framebuffers and render targets](/guides/framebuffers).
+
+Destroy NanoVG before releasing the layer or Metal device resources:
+
+```c
+nvgDeleteMTL(vg);
+```

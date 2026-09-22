@@ -1,0 +1,45 @@
+---
+title: Direct3D 11
+description: Integrate NanoVG with an existing Direct3D 11 device and render target.
+---
+
+The Direct3D 11 implementation lives in `nanovg_d3d11.h`. Define its implementation in one C or C++ translation unit:
+
+```c
+#include <nanovg/nanovg.h>
+
+#define NANOVG_D3D11_IMPLEMENTATION
+#include <nanovg/nanovg_d3d11.h>
+```
+
+The header includes `d3d11.h` and uses generated shader headers from `shaders/d3d11`, which the repository CMake target exposes as an include directory.
+
+## Create the context
+
+Pass an application-owned device:
+
+```c
+NVGcontext* vg = nvgCreateD3D11(device, NVG_ANTIALIAS | NVG_STENCIL_STROKES);
+```
+
+The device must outlive the NanoVG context.
+
+## Render a frame
+
+Before `nvgBeginFrame()`:
+
+1. Bind the color render-target view and depth-stencil view.
+2. Set a viewport matching the target.
+3. Clear color as needed and clear stencil to zero.
+
+Then use the shared NanoVG frame lifecycle. The complete Win32 device, swap-chain, resize, and presentation flow is in `examples/example_d3d11.c`.
+
+## Cleanup
+
+Release NanoVG before releasing the device:
+
+```c
+nvgDeleteD3D11(vg);
+```
+
+The header defines `NVG_IMAGE_NODELETE` for externally owned texture integration, although its optional handle helper block is not enabled in the current implementation.

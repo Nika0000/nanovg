@@ -1,0 +1,18 @@
+---
+title: Development setup
+description: Configure a NanoVG development build and run the standard checks.
+---
+
+Clone the repository with a C and C++ toolchain plus CMake 3.15 or newer. Configure the core tests:
+
+```sh
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DNANOVG_BUILD_TESTS=ON
+cmake --build build --config Debug
+ctest --test-dir build --build-config Debug --output-on-failure
+```
+
+Examples need graphics SDKs and platform dependencies described in [Building the examples](/getting-started/examples).
+
+Before submitting changes, build affected examples, run the core tests, check live C++ examples after public API changes, and build the documentation after content or navigation changes.
+
+Keep generated build directories outside tracked source. CI currently checks the core on Linux, Windows, and macOS; builds platform examples; and builds the documentation site with its browser compiler.

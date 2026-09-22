@@ -1,0 +1,58 @@
+---
+title: Strokes and fills
+description: Style paths with colors, gradients, image paints, line caps, and joins.
+---
+
+Fill and stroke styles live in the current NanoVG state. They remain active until changed or restored.
+
+## Solid colors
+
+```c
+nvgBeginPath(vg);
+nvgRoundedRect(vg, 24.0f, 24.0f, 180.0f, 64.0f, 10.0f);
+nvgFillColor(vg, nvgRGBA(30, 64, 175, 255));
+nvgFill(vg);
+
+nvgStrokeWidth(vg, 2.0f);
+nvgStrokeColor(vg, nvgRGBA(147, 197, 253, 255));
+nvgStroke(vg);
+```
+
+Use `nvgRGB()` or `nvgRGBA()` for 8-bit channels and their `f` variants for floating-point channels.
+
+## Gradients
+
+Create an `NVGpaint`, then assign it to the fill or stroke:
+
+```c
+NVGpaint gradient = nvgLinearGradient(
+    vg, 20.0f, 20.0f, 220.0f, 20.0f,
+    nvgRGB(14, 165, 233),
+    nvgRGB(139, 92, 246));
+
+nvgBeginPath(vg);
+nvgRoundedRect(vg, 20.0f, 20.0f, 200.0f, 72.0f, 12.0f);
+nvgFillPaint(vg, gradient);
+nvgFill(vg);
+```
+
+NanoVG also provides `nvgRadialGradient()` and `nvgBoxGradient()`. Box gradients are useful for soft shadows and highlights around rounded rectangles.
+
+Paint coordinates are transformed when the paint is assigned with `nvgFillPaint()` or `nvgStrokePaint()`. Create and assign paints under the same local transform used by the shape when they should move together.
+
+## Stroke geometry
+
+```c
+nvgStrokeWidth(vg, 6.0f);
+nvgLineCap(vg, NVG_ROUND);
+nvgLineJoin(vg, NVG_ROUND);
+nvgMiterLimit(vg, 4.0f);
+```
+
+Caps may be `NVG_BUTT`, `NVG_ROUND`, or `NVG_SQUARE`. Joins may be `NVG_MITER`, `NVG_ROUND`, or `NVG_BEVEL`. The miter limit controls when a sharp miter changes to a bevel.
+
+This fork also provides `nvgLineStyle()` with `NVG_LINE_SOLID`, `NVG_LINE_GLOW`, `NVG_LINE_DASHED`, and `NVG_LINE_DOTTED`.
+
+## Opacity
+
+`nvgGlobalAlpha()` multiplies the alpha of subsequent shapes, including colors that are already translucent. Wrap temporary opacity in saved state so it does not affect later components.

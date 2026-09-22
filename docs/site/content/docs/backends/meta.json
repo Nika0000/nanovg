@@ -1,0 +1,13 @@
+{
+  "title": "Renderer backends",
+  "pages": [
+    "index",
+    "opengl",
+    "d3d11",
+    "vulkan",
+    "metal",
+    "webgpu",
+    "deko3d",
+    "ps4"
+  ]
+}

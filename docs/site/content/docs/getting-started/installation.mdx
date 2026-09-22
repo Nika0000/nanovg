@@ -1,0 +1,73 @@
+---
+title: Installation
+description: Build and link NanoVG with CMake or compile the core source directly.
+---
+
+NanoVG is a source library. This repository defines a static CMake target named `nanovg` from `src/nanovg.c` and publishes the required include directories through that target.
+
+## Add it to a CMake project
+
+Place this repository in the source tree, for example under `extern/nanovg`, then add it as a subdirectory:
+
+```cmake
+add_subdirectory(extern/nanovg)
+
+add_executable(my_app main.c)
+target_link_libraries(my_app PRIVATE nanovg)
+```
+
+Application code can then include the public API and a renderer header:
+
+```c
+#include <nanovg/nanovg.h>
+#include <nanovg/nanovg_gl.h>
+```
+
+The renderer itself may require extra platform libraries. For example, an OpenGL application must also link its OpenGL loader and window-system dependencies. NanoVG does not create a window or graphics device.
+
+## Compile manually
+
+Compile `src/nanovg.c` once and add these include directories:
+
+```text
+include
+include/nanovg
+third_party
+```
+
+On Unix-like systems, link the math library when the toolchain requires it:
+
+```sh
+cc -Iinclude -Iinclude/nanovg -Ithird_party \
+  main.c src/nanovg.c -lm -o my_app
+```
+
+This command only builds the core and application code. Add the graphics and platform libraries required by the selected renderer.
+
+## Header implementations
+
+OpenGL, Direct3D 11, Vulkan, and WebGPU implementations are contained in their renderer headers. Define the matching implementation macro in exactly one translation unit before including that header:
+
+```c
+#define NANOVG_GL3_IMPLEMENTATION
+#include <nanovg/nanovg_gl.h>
+```
+
+Defining the macro in more than one translation unit produces duplicate symbols. Metal, deko3d, and PlayStation 4 add implementation source files through their CMake platform options instead.
+
+## Optional CMake features
+
+All options default to `OFF`:
+
+| Option | Purpose |
+| --- | --- |
+| `NANOVG_BUILD_EXAMPLES` | Build available native examples. |
+| `NANOVG_BUILD_TESTS` | Build and register the core test executable. |
+
+| `NANOVG_PLATFORM_METAL` | Compile the Objective-C Metal implementation. |
+| `NANOVG_PLATFORM_WEBGPU` | Enable WebGPU example configuration. |
+| `NANOVG_PLATFORM_DEKO3D` | Compile the deko3d implementation. |
+| `NANOVG_PLATFORM_PS4` | Compile the PlayStation 4 implementation. |
+| `NANOVG_FONTSTASH_STREAM` | Enable font streaming in the core target. |
+
+Continue with [Choosing a renderer](/getting-started/choosing-a-renderer) or [Your first frame](/getting-started/first-frame).

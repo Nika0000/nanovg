@@ -1,0 +1,261 @@
+---
+title: State stack
+description: Detailed reference for saved drawing state, global alpha, shape antialiasing, and scissor clipping.
+---
+
+import { stateExample } from "@/lib/live-examples";
+
+NanoVG keeps the current drawing configuration in an `NVGstate`. Applications do not access that structure directly; they update it through public setters and isolate changes with the state stack.
+
+The current state contains:
+
+- Fill and stroke paints
+- Stroke width, miter limit, cap, join, and line style
+- Shape antialiasing
+- Global alpha
+- Affine transform
+- Scissor transform and extent
+- Composite blend factors
+- Font face, size, blur, dilation, quality, spacing, line height, and alignment
+
+Path geometry is not part of this state. `nvgSave()`, `nvgRestore()`, and `nvgReset()` do not clear the current path; `nvgBeginPath()` does.
+
+<LiveExample code={stateExample} />
+
+## Component isolation pattern
+
+Wrap reusable drawing functions so their transforms and styles cannot affect callers:
+
+```c
+void drawBadge(NVGcontext* vg, float x, float y)
+{
+    nvgSave(vg);
+
+    nvgTranslate(vg, x, y);
+    nvgGlobalAlpha(vg, 0.85f);
+    nvgScissor(vg, 0.0f, 0.0f, 160.0f, 40.0f);
+
+    nvgBeginPath(vg);
+    nvgRoundedRect(vg, 0.0f, 0.0f, 160.0f, 40.0f, 8.0f);
+    nvgFillColor(vg, nvgRGB(37, 99, 235));
+    nvgFill(vg);
+
+    nvgRestore(vg);
+}
+```
+
+The restored state is exactly the state present before `nvgSave()`, including its transform and clip.
+
+## `nvgSave`
+
+```c
+void nvgSave(NVGcontext* ctx);
+```
+
+Pushes a copy of the current state onto the context's fixed-size state stack. Later setters modify the new top state.
+
+The current implementation has 32 state slots, including the initial state created by `nvgBeginFrame()`. A save at the limit is silently ignored because this function has no return value. Treat the limit as an implementation ceiling rather than normal nesting capacity.
+
+Always balance saves structurally. If excessive saves overflow silently, later restores may pop valid outer states earlier than the source code suggests.
+
+## `nvgRestore`
+
+```c
+void nvgRestore(NVGcontext* ctx);
+```
+
+Discards the top saved state and exposes the preceding one. Calling it when only the initial frame state remains is a no-op.
+
+`nvgRestore()` does not undo pixels already rendered or remove geometry already added to the current path. It only changes configuration used by later operations.
+
+Prefer one exit path or a cleanup block when a drawing function can fail:
+
+```c
+nvgSave(vg);
+
+if (!drawContent(vg))
+    goto cleanup;
+
+drawDecoration(vg);
+
+cleanup:
+nvgRestore(vg);
+```
+
+## `nvgReset`
+
+```c
+void nvgReset(NVGcontext* ctx);
+```
+
+Replaces the current top state with defaults. It does not push or pop the stack.
+
+| Setting | Default |
+| --- | --- |
+| Fill | Opaque white |
+| Stroke | Opaque black |
+| Composite operation | `NVG_SOURCE_OVER` |
+| Shape antialiasing | Enabled |
+| Stroke width | `1.0f` |
+| Miter limit | `10.0f` |
+| Line cap | `NVG_BUTT` |
+| Line join | `NVG_MITER` |
+| Line style | `NVG_LINE_SOLID` |
+| Global alpha | `1.0f` |
+| Transform | Identity |
+| Scissor | Disabled |
+| Font size | `16.0f` |
+| Letter spacing | `0.0f` |
+| Line-height multiplier | `1.0f` |
+| Font blur and dilation | `0.0f` |
+| Font quality | `1.0f` |
+| Text alignment | `NVG_ALIGN_LEFT | NVG_ALIGN_BASELINE` |
+| Font ID | `0` |
+
+`nvgBeginFrame()` creates an initial state and applies the same reset automatically. Calling `nvgReset()` inside a saved scope resets only that scope; a later `nvgRestore()` still recovers the outer state.
+
+## `nvgShapeAntiAlias`
+
+```c
+void nvgShapeAntiAlias(NVGcontext* ctx, int enabled);
+```
+
+Controls the antialias fringe generated for subsequent path fills and strokes. Zero disables it; any nonzero value enables it.
+
+```c
+nvgSave(vg);
+nvgShapeAntiAlias(vg, 0);
+drawPixelAlignedGrid(vg);
+nvgRestore(vg);
+```
+
+This setting does not change image sampling or font rasterization. It also cannot add renderer support that was disabled when the context was created. A context normally needs the `NVG_ANTIALIAS` creation flag for geometry-based edge antialiasing to be useful.
+
+Disabling the fringe can help intentionally pixel-aligned geometry or an MSAA workflow, but arbitrary curves and rotated edges may appear jagged.
+
+## `nvgGlobalAlpha`
+
+```c
+void nvgGlobalAlpha(NVGcontext* ctx, float alpha);
+```
+
+Stores an opacity multiplier for subsequent drawing. It multiplies the alpha already present in fill paints, stroke paints, image patterns, and text colors.
+
+```c
+nvgSave(vg);
+nvgGlobalAlpha(vg, fade);
+drawPanel(vg);
+nvgRestore(vg);
+```
+
+Use values from `0.0f` for fully transparent to `1.0f` for unchanged opacity. The setter does not clamp or validate its argument, so clamp animated or user-provided values before passing them:
+
+```c
+float alpha = fade < 0.0f ? 0.0f : (fade > 1.0f ? 1.0f : fade);
+nvgGlobalAlpha(vg, alpha);
+```
+
+Global alpha is not cumulative when the function is called repeatedly; each call replaces the stored multiplier. To combine parent and child opacity, multiply the values in application code or use nested state with the combined result.
+
+## `nvgScissor`
+
+```c
+void nvgScissor(
+    NVGcontext* ctx,
+    float x,
+    float y,
+    float width,
+    float height);
+```
+
+Replaces the current clip with a rectangle expressed in the coordinate system active at the time of the call.
+
+| Parameter | Meaning |
+| --- | --- |
+| `x`, `y` | Top-left corner in current logical coordinates. |
+| `width`, `height` | Rectangle size. Negative values are clamped to zero. |
+
+NanoVG stores the rectangle center, half-extents, and current transform. Later changes to the current transform do not move an already established scissor.
+
+```c
+nvgSave(vg);
+nvgTranslate(vg, panelX, panelY);
+nvgScissor(vg, 0.0f, 0.0f, panelWidth, panelHeight);
+drawScrollableContent(vg, scrollOffset);
+nvgRestore(vg);
+```
+
+The clip affects subsequent fills, strokes, images, and text. It does not retroactively clip work already submitted.
+
+## `nvgIntersectScissor`
+
+```c
+void nvgIntersectScissor(
+    NVGcontext* ctx,
+    float x,
+    float y,
+    float width,
+    float height);
+```
+
+Intersects the existing scissor with a rectangle in the current coordinate system. If no scissor is active, this behaves like `nvgScissor()`.
+
+The previous scissor is transformed into the current coordinate space before intersection. When the old and new transforms have different rotations, NanoVG intersects axis-aligned bounds in the current space. The result is therefore a conservative rectangular approximation rather than an arbitrary rotated polygon.
+
+A common nested-UI pattern is:
+
+```c
+nvgSave(vg);
+nvgScissor(vg, windowX, windowY, windowWidth, windowHeight);
+
+nvgSave(vg);
+nvgTranslate(vg, childX, childY);
+nvgIntersectScissor(vg, 0.0f, 0.0f, childWidth, childHeight);
+drawChild(vg);
+nvgRestore(vg);
+
+nvgRestore(vg);
+```
+
+Repeated intersection can only retain or reduce the visible rectangle. Use `nvgScissor()` to replace it or `nvgResetScissor()` to disable it.
+
+## `nvgResetScissor`
+
+```c
+void nvgResetScissor(NVGcontext* ctx);
+```
+
+Disables scissor clipping in the current state. This does not affect a saved outer state:
+
+```c
+nvgSave(vg);                 /* Preserve the caller's clip. */
+nvgResetScissor(vg);         /* Draw without clipping in this scope. */
+drawOverlay(vg);
+nvgRestore(vg);              /* Recover the caller's clip. */
+```
+
+## Interaction with transforms and paths
+
+Scissors and path segments both capture the current transform when they are defined, but they are stored separately. This ordering:
+
+```c
+nvgScissor(vg, 0, 0, 100, 100);
+nvgTranslate(vg, 50, 0);
+```
+
+leaves the scissor at its original location while moving later path coordinates. Reverse the calls when the clip should move with the translated component.
+
+Saving and restoring state does not save the current path. If a component needs independent geometry, call `nvgBeginPath()` before defining it.
+
+## Common mistakes
+
+- Forgetting `nvgRestore()` on an early return.
+- Assuming `nvgReset()` pops a saved state.
+- Expecting state or stack contents to persist across `nvgBeginFrame()`.
+- Nesting more than 31 saves beyond the frame's initial state.
+- Passing unclamped alpha values.
+- Applying a transform after defining a scissor and expecting the clip to move.
+- Expecting intersected scissors with different rotations to produce an exact polygonal intersection.
+- Resetting a scissor without a saved scope and unintentionally disabling the caller's clip.
+
+See [Transforms](/reference/transforms) for matrix operations and [Drawing lifecycle](/concepts/drawing-lifecycle) for frame-level state behavior.

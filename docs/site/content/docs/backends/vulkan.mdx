@@ -1,0 +1,48 @@
+---
+title: Vulkan
+description: Configure NanoVG for Vulkan dynamic rendering and application-owned command buffers.
+---
+
+The Vulkan backend is a header implementation. Include Vulkan declarations first, then define it in one translation unit:
+
+```c
+#include <vulkan/vulkan.h>
+#include <nanovg/nanovg.h>
+
+#define NANOVG_VULKAN_IMPLEMENTATION
+#include <nanovg/nanovg_vk.h>
+```
+
+## Create information
+
+`VKNVGCreateInfo` connects NanoVG to application-owned Vulkan objects:
+
+```c
+VKNVGCreateInfo info = {0};
+info.gpu = physicalDevice;
+info.device = device;
+info.cmdBuffer = commandBuffers;
+info.swapchainImageCount = imageCount;
+info.currentFrame = &currentFrame;
+info.colorFormat = colorFormat;
+info.depthStencilFormat = depthStencilFormat;
+
+NVGcontext* vg = nvgCreateVk(info, NVG_ANTIALIAS | NVG_STENCIL_STROKES, graphicsQueue);
+```
+
+`cmdBuffer` points to the per-swapchain-image command-buffer array, and `currentFrame` points to the index updated by the host. `uploadCmdBuffer` and `allocator` may be supplied when the application uses them. The optional extension flags must reflect extensions actually enabled on the device.
+
+## Required host setup
+
+The examples enable Vulkan dynamic rendering and synchronization2. Record `vkCmdBeginRendering()` with color and depth-stencil attachments whose formats match `VKNVGCreateInfo`, then call the normal NanoVG frame functions before `vkCmdEndRendering()`.
+
+The host owns image acquisition, barriers, semaphores, fences, submission, and presentation. When recreating the swap chain, keep the command-buffer array, current-frame pointer, formats, and image count consistent with what the backend uses; recreate the NanoVG context when those creation assumptions change.
+
+Wait until NanoVG work is no longer in flight before cleanup:
+
+```c
+vkQueueWaitIdle(graphicsQueue);
+nvgDeleteVk(vg);
+```
+
+Use `examples/example_vulkan.c` for GLFW integration or `examples/example_vulkan_min_no_glfw.c` for a smaller native-window example.

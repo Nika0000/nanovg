@@ -1,0 +1,11 @@
+{
+  "title": "Getting started",
+  "defaultOpen": true,
+  "pages": [
+    "index",
+    "installation",
+    "choosing-a-renderer",
+    "first-frame",
+    "examples"
+  ]
+}

@@ -1,0 +1,88 @@
+---
+title: Building the examples
+description: Configure and build NanoVG's native examples on Linux, Windows, and macOS.
+---
+
+The example targets demonstrate complete renderer integrations. CMake creates only the examples whose graphics dependencies are available.
+
+## Configure and build
+
+From the repository root:
+
+```sh
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DNANOVG_BUILD_EXAMPLES=ON
+cmake --build build --config Release
+```
+
+Multi-configuration generators such as Visual Studio place executables under a configuration directory such as `build/Release/`. Single-configuration generators normally place them directly in `build/`.
+
+## Available targets
+
+| Target | Conditions |
+| --- | --- |
+| `example_gl3` | GLFW and OpenGL; GLEW is also required outside Apple platforms. |
+| `example_d3d11` | Windows with Direct3D 11. |
+| `example_filters` | Windows with Direct3D 11. |
+| `example_vulkan` | Vulkan and GLFW. |
+| `example_vulkan_min` | Vulkan; uses a native minimal window path instead of GLFW. |
+| `example_wgpu` | `NANOVG_PLATFORM_WEBGPU=ON`, GLFW, and a WebGPU target. |
+
+The OpenGL and Vulkan GLFW dependency is fetched at version 3.4 when CMake cannot find an installed package. Other graphics SDKs must be available to CMake.
+
+## Linux dependencies
+
+The CI configuration uses Debian or Ubuntu packages equivalent to:
+
+```sh
+sudo apt-get update
+sudo apt-get install libglfw3-dev libglew-dev libvulkan-dev libx11-xcb-dev
+```
+
+Then run the standard configure and build commands. Depending on the display environment and selected targets, the system may require additional X11 or Wayland development packages.
+
+## Windows dependencies
+
+Direct3D 11 comes from the Windows SDK. The CI build installs GLFW and GLEW through vcpkg and passes its toolchain file:
+
+```powershell
+cmake -S . -B build `
+  -DCMAKE_BUILD_TYPE=Release `
+  -DNANOVG_BUILD_EXAMPLES=ON `
+  -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake"
+
+cmake --build build --config Release
+```
+
+Install a Vulkan SDK if building the Vulkan targets.
+
+## macOS dependencies
+
+Install GLFW and GLEW, then configure normally:
+
+```sh
+brew install glfw glew
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DNANOVG_BUILD_EXAMPLES=ON
+cmake --build build --config Release
+```
+
+To compile the Metal implementation in the library, add `-DNANOVG_PLATFORM_METAL=ON`.
+
+## Build a single example
+
+Specify a target when iterating on one backend:
+
+```sh
+cmake --build build --config Release --target example_gl3
+```
+
+If CMake does not create an expected target, read the configure output and confirm the dependencies in the table above were detected.
+
+## Run tests too
+
+Tests are independent of the example option:
+
+```sh
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DNANOVG_BUILD_TESTS=ON
+cmake --build build --config Release
+ctest --test-dir build --build-config Release --output-on-failure
+```

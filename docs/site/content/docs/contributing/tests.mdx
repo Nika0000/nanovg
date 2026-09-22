@@ -1,0 +1,25 @@
+---
+title: Tests
+description: Run NanoVG's core tests and choose focused validation for renderer changes.
+---
+
+Build and run the portable test executable:
+
+```sh
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DNANOVG_BUILD_TESTS=ON
+cmake --build build --config Release
+ctest --test-dir build --build-config Release --output-on-failure
+```
+
+`tests/test_nanovg.c` covers color utilities, transforms, CPU image filters, and state behavior through a null renderer. Add portable behavior tests there when they can validate meaningful public outcomes without a GPU.
+
+Renderer work also needs its matching example build and, when possible, a visible or smoke-test run on the native API. A successful core test cannot validate shader compilation, native resource lifetime, render-pass compatibility, or graphics state restoration.
+
+Documentation checks run from `docs/site`:
+
+```sh
+npm ci
+npm run typecheck
+npm run check:links
+npm run build
+```

@@ -1,0 +1,32 @@
+---
+title: Renderer backends
+description: Compare NanoVG renderer implementations and their host-application requirements.
+---
+
+NanoVG owns vector tessellation, fonts, images, and draw batching. Each backend translates those batches into one graphics API. The host still owns its window, device, primary target, synchronization, and presentation.
+
+## Support matrix
+
+| Backend | Implementation | Example | CMake switch |
+| --- | --- | --- | --- |
+| OpenGL 2/3 and OpenGL ES 2/3 | Header implementation in `nanovg_gl.h` | `example_gl3` and GLES sources | None for the core library |
+| Direct3D 11 | Header implementation in `nanovg_d3d11.h` | `example_d3d11` | None for the core library |
+| Vulkan | Header implementation in `nanovg_vk.h` | `example_vulkan`, `example_vulkan_min` | None for the core library |
+| Metal | `src/metal/nanovg_mtl.m` | No standalone example in this repository | `NANOVG_PLATFORM_METAL` |
+| WebGPU | Header implementation in `nanovg_wgpu.h` | `example_wgpu` | `NANOVG_PLATFORM_WEBGPU` for the example |
+| deko3d | `src/deko3d` plus `nanovg_dk.h` | No standalone example in this repository | `NANOVG_PLATFORM_DEKO3D` |
+| PlayStation 4 assets | `src/ps4/nanovg_ps4.c` | No standalone example in this repository | `NANOVG_PLATFORM_PS4` |
+
+## Shared create flags
+
+Most backends accept a combination of:
+
+- `NVG_ANTIALIAS` for geometry-based edge antialiasing.
+- `NVG_STENCIL_STROKES` for improved overlapping strokes at additional cost.
+- `NVG_DEBUG` where the backend implements extra validation.
+
+MSAA applications may omit `NVG_ANTIALIAS` if multisampling already provides acceptable edges.
+
+## Choosing a backend
+
+Use the API already initialized by the application. [OpenGL](/backends/opengl) has the shortest example setup. [Direct3D 11](/backends/d3d11), [Vulkan](/backends/vulkan), [Metal](/backends/metal), and [WebGPU](/backends/webgpu) integrate with existing native objects. Console pages describe only what this public repository provides.

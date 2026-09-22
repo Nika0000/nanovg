@@ -1,0 +1,19 @@
+---
+title: Build options
+description: Reference for repository CMake options used during NanoVG development.
+---
+
+| Option | Default | Effect |
+| --- | --- | --- |
+| `NANOVG_BUILD_EXAMPLES` | `OFF` | Configure examples whose dependencies are available. |
+
+| `NANOVG_BUILD_TESTS` | `OFF` | Build and register `test_nanovg`. |
+| `NANOVG_PLATFORM_PS4` | `OFF` | Add PlayStation 4 shader asset source. |
+| `NANOVG_PLATFORM_DEKO3D` | `OFF` | Add deko3d renderer sources. |
+| `NANOVG_PLATFORM_METAL` | `OFF` | Enable Objective-C and add the Metal source. |
+| `NANOVG_PLATFORM_WEBGPU` | `OFF` | Configure WebGPU support and its example when a target exists. |
+| `NANOVG_FONTSTASH_STREAM` | `OFF` | Compile the core with font streaming enabled. |
+
+WebGPU additionally accepts `NANOVG_WEBGPU_TARGET` as the target or link configuration used by `example_wgpu`. Without it, CMake tries an installed Dawn package and its `dawn::webgpu_dawn` target.
+
+Always re-run CMake configuration after changing an option or installing a dependency that controls whether an example target exists.

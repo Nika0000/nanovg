@@ -1,0 +1,210 @@
+---
+title: Renderer creation
+description: Reference for public renderer context constructors and matching destructors.
+---
+
+Every renderer creates the same `NVGcontext` API but connects it to a different native graphics device. Choose one constructor, check its result, and use only that backend's matching destructor.
+
+## Creation flags
+
+Most backend headers expose these common values:
+
+```c
+enum NVGcreateFlags {
+    NVG_ANTIALIAS       = 1 << 0,
+    NVG_STENCIL_STROKES = 1 << 1,
+    NVG_DEBUG           = 1 << 2,
+};
+```
+
+Combine flags with bitwise OR, or pass `0`.
+
+| Flag | Effect |
+| --- | --- |
+| `NVG_ANTIALIAS` | Enables geometry-based edge antialiasing. It may be unnecessary when the target uses MSAA. |
+| `NVG_STENCIL_STROKES` | Uses the stencil buffer to prevent overlapping stroke fragments from being drawn more than once. This improves self-intersections and sharp turns at some performance cost. |
+| `NVG_DEBUG` | Enables additional backend checks or diagnostics where implemented. |
+
+Metal additionally defines `NVG_DOUBLE_BUFFER` and `NVG_TRIPLE_BUFFER`. Select at most one to configure its internal buffer count.
+
+The target render pass or framebuffer needs a stencil attachment when NanoVG uses stencil-based fills or strokes. Backend guides describe the required formats and state.
+
+## Constructor summary
+
+| Backend | Header | Create | Delete |
+| --- | --- | --- | --- |
+| OpenGL 2 | `nanovg_gl.h` | `nvgCreateGL2(flags)` | `nvgDeleteGL2(ctx)` |
+| OpenGL 3 | `nanovg_gl.h` | `nvgCreateGL3(flags)` | `nvgDeleteGL3(ctx)` |
+| OpenGL ES 2 | `nanovg_gl.h` | `nvgCreateGLES2(flags)` | `nvgDeleteGLES2(ctx)` |
+| OpenGL ES 3 | `nanovg_gl.h` | `nvgCreateGLES3(flags)` | `nvgDeleteGLES3(ctx)` |
+| Direct3D 11 | `nanovg_d3d11.h` | `nvgCreateD3D11(device, flags)` | `nvgDeleteD3D11(ctx)` |
+| Vulkan | `nanovg_vk.h` | `nvgCreateVk(info, flags, queue)` | `nvgDeleteVk(ctx)` |
+| Metal | `nanovg_mtl.h` | `nvgCreateMTL(metalLayer, flags)` | `nvgDeleteMTL(ctx)` |
+| WebGPU | `nanovg_wgpu.h` | `nvgCreateWgpu(info, flags)` | `nvgDeleteWgpu(ctx)` |
+| deko3d | `nanovg_dk.h` | `nvgCreateDk(renderer, flags)` | `nvgDeleteDk(ctx)` |
+
+All constructors return `NULL` when context or backend-resource initialization fails. A successful context owns its NanoVG images, font atlases, pipelines, shaders, and other resources created internally. Delete application-created framebuffer wrappers and then the context before destroying native objects referenced by that backend.
+
+## OpenGL and OpenGL ES
+
+Only declarations for the implementation selected by a compile-time macro are visible:
+
+```c
+NVGcontext* nvgCreateGL2(int flags);
+void nvgDeleteGL2(NVGcontext* ctx);
+
+NVGcontext* nvgCreateGL3(int flags);
+void nvgDeleteGL3(NVGcontext* ctx);
+
+NVGcontext* nvgCreateGLES2(int flags);
+void nvgDeleteGLES2(NVGcontext* ctx);
+
+NVGcontext* nvgCreateGLES3(int flags);
+void nvgDeleteGLES3(NVGcontext* ctx);
+```
+
+Define exactly one of `NANOVG_GL2_IMPLEMENTATION`, `NANOVG_GL3_IMPLEMENTATION`, `NANOVG_GLES2_IMPLEMENTATION`, or `NANOVG_GLES3_IMPLEMENTATION` in one translation unit. The corresponding OpenGL context must be current when creating, drawing with, and deleting the NanoVG context.
+
+```c
+NVGcontext* vg = nvgCreateGL3(NVG_ANTIALIAS | NVG_STENCIL_STROKES | NVG_DEBUG);
+if (vg == NULL) {
+    // OpenGL resources or NanoVG initialization failed.
+}
+
+// Render frames while the same compatible GL context is current.
+nvgDeleteGL3(vg);
+```
+
+The constructor has no native-device parameter; it obtains and creates resources through the currently bound OpenGL context.
+
+## Direct3D 11
+
+```c
+NVGcontext* nvgCreateD3D11(ID3D11Device* pDevice, int flags);
+void nvgDeleteD3D11(NVGcontext* ctx);
+```
+
+`pDevice` is the application's Direct3D 11 device. The backend obtains its immediate context and creates shaders, states, buffers, and textures associated with that device. Keep the device alive until after `nvgDeleteD3D11()`.
+
+```c
+NVGcontext* vg = nvgCreateD3D11(device, NVG_ANTIALIAS | NVG_STENCIL_STROKES);
+if (vg == NULL) {
+    // Backend initialization failed.
+}
+```
+
+NanoVG renders through the immediate context, so synchronize its use with other immediate-context rendering. See [Direct3D 11](/backends/d3d11) for target and state requirements.
+
+## Vulkan
+
+```c
+typedef struct VKNVGCreateInfo {
+    VkPhysicalDevice gpu;
+    VkDevice device;
+    VkCommandBuffer* cmdBuffer;
+    VkCommandBuffer uploadCmdBuffer;
+    uint32_t swapchainImageCount;
+    uint32_t* currentFrame;
+    const VkAllocationCallbacks* allocator;
+    VkNvgExt ext;
+    VkFormat colorFormat;
+    VkFormat depthStencilFormat;
+} VKNVGCreateInfo;
+
+NVGcontext* nvgCreateVk(VKNVGCreateInfo createInfo, int flags, VkQueue queue);
+void nvgDeleteVk(NVGcontext* ctx);
+```
+
+| Member | Contract |
+| --- | --- |
+| `gpu` | Physical device used for memory properties. |
+| `device` | Logical device used to create and destroy backend resources. |
+| `cmdBuffer` | Array containing one draw command buffer per swapchain image. |
+| `uploadCmdBuffer` | Command buffer used for texture uploads. |
+| `swapchainImageCount` | Length of the command-buffer array and per-frame resource set. |
+| `currentFrame` | Pointer to the current swapchain-image index. The backend reads it while rendering. |
+| `allocator` | Optional Vulkan allocation callbacks; may be null. |
+| `ext` | Enabled optional dynamic-state capabilities. |
+| `colorFormat` | Format of the active color attachment. |
+| `depthStencilFormat` | Format of the active depth-stencil attachment. |
+
+`queue` submits texture-upload work. The create-info handles, arrays, and pointed-to current-frame value are application-owned and must remain valid while the context uses them. Keep the device idle or otherwise ensure NanoVG work is complete before destroying the context and its Vulkan resources.
+
+See [Vulkan](/backends/vulkan) for extension requirements, command recording, render-pass compatibility, and synchronization.
+
+## Metal
+
+```c
+NVGcontext* nvgCreateMTL(void* metalLayer, int flags);
+void nvgDeleteMTL(NVGcontext* ctx);
+```
+
+`metalLayer` must point to a `CAMetalLayer`. The backend uses the layer's device and obtains drawables from it. Keep the layer and device valid until the context is deleted.
+
+```c
+NVGcontext* vg = nvgCreateMTL((__bridge void*)layer, NVG_ANTIALIAS | NVG_TRIPLE_BUFFER);
+```
+
+See [Metal](/backends/metal) for layer configuration and framebuffer helpers.
+
+## WebGPU
+
+```c
+typedef struct WGPUNVGCreateInfo {
+    WGPUDevice device;
+    WGPUQueue queue;
+    WGPUTextureFormat colorFormat;
+    WGPUTextureFormat depthStencilFormat;
+} WGPUNVGCreateInfo;
+
+NVGcontext* nvgCreateWgpu(WGPUNVGCreateInfo createInfo, int flags);
+void nvgDeleteWgpu(NVGcontext* ctx);
+void nvgWgpuBindRenderPass(NVGcontext* ctx, WGPURenderPassEncoder pass);
+```
+
+The device and queue are borrowed application-owned handles. The two formats must match the color and depth-stencil attachments used for NanoVG render passes.
+
+Call `nvgWgpuBindRenderPass()` once per frame after beginning the application's render pass and before any NanoVG drawing call. NanoVG may flush early when, for example, its font atlas grows, so binding only immediately before `nvgEndFrame()` is too late. Clear the stencil attachment to zero when beginning the pass.
+
+The backend targets the standard C `webgpu.h` interface shared by Dawn, wgpu-native, and Emscripten's emdawnwebgpu port. Include that API's header before `nanovg_wgpu.h`.
+
+See [WebGPU](/backends/webgpu) for a complete render-pass sequence and current feature limits.
+
+## deko3d
+
+```cpp
+NVGcontext* nvgCreateDk(nvg::DkRenderer* renderer, int flags);
+void nvgDeleteDk(NVGcontext* ctx);
+```
+
+The constructor borrows an initialized `nvg::DkRenderer`. Keep that renderer and its deko3d objects alive until after `nvgDeleteDk()`. This interface is C++ and platform-specific.
+
+See [deko3d](/backends/deko3d) for the supported integration scope.
+
+## PlayStation 4
+
+The PlayStation 4 files in this repository expose backend shader data, but `nanovg_ps4.h` does not declare a public context constructor and destructor pair. There is therefore no renderer-creation API to call from this reference. See [PlayStation 4](/backends/ps4) for the repository's available surface.
+
+## Destruction order
+
+Use this general shutdown order:
+
+1. End or cancel any active NanoVG frame.
+2. Ensure submitted GPU work no longer uses NanoVG-owned resources as required by the native API.
+3. Delete backend-specific framebuffer helpers.
+4. Call the destructor matching the constructor.
+5. Destroy the native layer, renderer, queue, device, or graphics context.
+
+Do not call `nvgDeleteInternal()` for a context returned by a public backend constructor. The matching public destructor performs that operation and communicates which backend owns the context.
+
+## Common mistakes
+
+- Calling a constructor before its native graphics context or device is ready.
+- Mixing a constructor with another backend's destructor.
+- Compiling more than one OpenGL implementation macro into the same program unintentionally.
+- Destroying a borrowed native object while NanoVG still references it.
+- Supplying attachment formats at creation that differ from the formats used while rendering.
+- Omitting a usable stencil attachment.
+- Binding the WebGPU render pass after NanoVG has already issued calls that can flush.
+
+See [Renderer backends](/backends) for setup requirements and [Context and frames](/reference/context) for the frame lifecycle after creation.

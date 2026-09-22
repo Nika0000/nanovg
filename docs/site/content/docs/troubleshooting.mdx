@@ -1,0 +1,59 @@
+---
+title: Troubleshooting
+description: Diagnose common NanoVG rendering, text, image, state, and build problems.
+---
+
+## Nothing is rendered
+
+Check the integration in this order:
+
+1. The renderer create function returned a non-null `NVGcontext`.
+2. The graphics context, device, queue, or command buffer is valid on the calling thread.
+3. The intended render target and viewport are active.
+4. The target has a stencil buffer where required, and stencil was cleared.
+5. Every drawing call occurs between `nvgBeginFrame()` and `nvgEndFrame()`.
+6. The host presents the target after `nvgEndFrame()`.
+
+For OpenGL, add `NVG_DEBUG` when creating the context and inspect graphics API errors and debug output.
+
+## Holes are filled incorrectly
+
+Call `nvgPathWinding(vg, NVG_HOLE)` immediately after the subpath that should be a hole. Calling it after another `nvgRect()`, `nvgCircle()`, or `nvgMoveTo()` applies it to that newer subpath.
+
+See [Paths and winding](/concepts/paths-and-winding) for a complete example.
+
+## Drawing styles leak into another component
+
+Fill, stroke, transform, scissor, alpha, composite, and text settings remain active. Wrap self-contained drawing code in balanced `nvgSave()` and `nvgRestore()` calls.
+
+If clipping persists, also check that the code calls `nvgResetScissor()` or restores a state saved before the scissor was set.
+
+## Text is missing
+
+- Check that `nvgCreateFont()` returned a value other than `-1`.
+- Resolve relative font paths against the executable's working directory, not the source directory.
+- Select the loaded face with `nvgFontFace()` or `nvgFontFaceId()`.
+- Add a fallback font when the primary font lacks the requested glyphs.
+- Keep font setup and `nvgText()` inside a valid NanoVG context and frame.
+
+## Text is blurry or the wrong size
+
+Pass the correct framebuffer-to-window ratio to `nvgBeginFrame()`. Use logical dimensions for the first two parameters. Avoid applying a large scale transform merely to compensate for a wrong pixel ratio.
+
+Text glyphs are snapped for sharp rendering, so fractional positions and changing transforms can cause small measurement differences.
+
+## Images have dark or bright transparent edges
+
+Check whether the source pixels use straight or premultiplied alpha. Set `NVG_IMAGE_PREMULTIPLIED` only for premultiplied input. Use `NVG_IMAGE_FLIPY` when the image orientation differs from the renderer's texture convention.
+
+## OpenGL rendering breaks host state
+
+NanoVG changes OpenGL program, blend, cull, depth, scissor, color-mask, stencil, texture, and buffer state while flushing. Restore the state required by subsequent rendering, or invalidate the host engine's state cache after `nvgEndFrame()`.
+
+## An example target is missing
+
+CMake creates targets only when their dependencies are available. Review the configure output, then compare the target requirements in [Building the examples](/getting-started/examples). Re-run configuration after installing a missing SDK or library.
+
+## A renderer header causes duplicate symbols
+
+Define a header implementation macro such as `NANOVG_GL3_IMPLEMENTATION` in exactly one translation unit. Other files may include the same renderer header without defining the macro.

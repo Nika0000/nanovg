@@ -1,0 +1,335 @@
+---
+title: Paints and colors
+description: Detailed reference for color construction, gradients, image patterns, fill styles, and stroke configuration.
+---
+
+import { paintsExample } from "@/lib/live-examples";
+
+An `NVGcolor` stores red, green, blue, and alpha as floating-point channels. An `NVGpaint` stores a transform, extent, radius, feather, inner and outer colors, and an optional image handle.
+
+Paint constructors return small values by copy. They do not allocate a resource and do not need deletion. Image handles referenced by an image paint remain owned by the NanoVG context and must stay valid while the paint is used.
+
+<LiveExample code={paintsExample} />
+
+## Color constructors
+
+### `nvgRGB` and `nvgRGBA`
+
+```c
+NVGcolor nvgRGB(unsigned char red, unsigned char green, unsigned char blue);
+NVGcolor nvgRGBA(unsigned char red, unsigned char green, unsigned char blue, unsigned char alpha);
+```
+
+Accept 8-bit channels from 0 to 255 and convert them to floating-point channels from 0 to 1. `nvgRGB()` uses an alpha of 255.
+
+```c
+NVGcolor blue = nvgRGB(37, 99, 235);
+NVGcolor translucentBlue = nvgRGBA(37, 99, 235, 128);
+```
+
+### `nvgRGBf` and `nvgRGBAf`
+
+```c
+NVGcolor nvgRGBf(float red, float green, float blue);
+NVGcolor nvgRGBAf(float red, float green, float blue, float alpha);
+```
+
+Accept floating-point channels. `nvgRGBf()` uses an alpha of `1.0f`.
+
+These functions store values directly and do not clamp them. Use finite values in the documented 0-to-1 range for portable output.
+
+### `nvgLerpRGBA`
+
+```c
+NVGcolor nvgLerpRGBA(NVGcolor start, NVGcolor end, float amount);
+```
+
+Linearly interpolates all four channels. `amount` is clamped to 0 through 1: zero returns `start`, and one returns `end`.
+
+```c
+NVGcolor pulse = nvgLerpRGBA(
+    nvgRGB(14, 165, 233),
+    nvgRGB(139, 92, 246),
+    animationAmount);
+```
+
+Interpolation occurs directly in the stored channel space. NanoVG does not perform automatic sRGB-to-linear conversion.
+
+### `nvgTransRGBA` and `nvgTransRGBAf`
+
+```c
+NVGcolor nvgTransRGBA(NVGcolor color, unsigned char alpha);
+NVGcolor nvgTransRGBAf(NVGcolor color, float alpha);
+```
+
+Return a copy of `color` with its alpha replaced. RGB channels are unchanged. These functions do not multiply the existing alpha.
+
+The floating variant stores alpha directly without clamping.
+
+### `nvgHSL` and `nvgHSLA`
+
+```c
+NVGcolor nvgHSL(float hue, float saturation, float lightness);
+NVGcolor nvgHSLA(float hue, float saturation, float lightness, unsigned char alpha);
+```
+
+Convert HSL to RGB. Hue uses turns rather than degrees: `0.0f` and `1.0f` are red, `1.0f / 3.0f` is green, and `2.0f / 3.0f` is blue.
+
+Hue wraps modulo 1, including negative values. Saturation and lightness are clamped to 0 through 1. `nvgHSL()` uses opaque alpha.
+
+```c
+NVGcolor accent = nvgHSLA(
+    210.0f / 360.0f,
+    0.90f,
+    0.56f,
+    255);
+```
+
+## Paint transform timing
+
+Gradient and pattern constructors describe paint geometry in the coordinates passed to them, but the current NanoVG transform is combined into the paint only when it is assigned with `nvgFillPaint()` or `nvgStrokePaint()`.
+
+For predictable local-space drawing, create and assign the paint while the same component transform is active:
+
+```c
+nvgSave(vg);
+nvgTranslate(vg, x, y);
+
+NVGpaint paint = nvgLinearGradient(
+    vg, 0, 0, width, 0,
+    nvgRGB(14, 165, 233),
+    nvgRGB(99, 102, 241));
+
+nvgFillPaint(vg, paint);
+
+nvgBeginPath(vg);
+nvgRoundedRect(vg, 0, 0, width, height, 8);
+nvgFill(vg);
+
+nvgRestore(vg);
+```
+
+Changing the current transform after assigning the paint does not update the transform stored in that state paint.
+
+## `nvgLinearGradient`
+
+```c
+NVGpaint nvgLinearGradient(
+    NVGcontext* ctx,
+    float startX,
+    float startY,
+    float endX,
+    float endY,
+    NVGcolor innerColor,
+    NVGcolor outerColor);
+```
+
+Creates a linear transition along the vector from the start point to the end point. The inner color appears at the start and the outer color at the end.
+
+If the points are almost identical, the implementation uses a vertical fallback direction. Use distinct points when direction matters.
+
+The transition feather is at least one logical unit, even for very short gradients.
+
+## `nvgBoxGradient`
+
+```c
+NVGpaint nvgBoxGradient(
+    NVGcontext* ctx,
+    float x,
+    float y,
+    float width,
+    float height,
+    float cornerRadius,
+    float feather,
+    NVGcolor innerColor,
+    NVGcolor outerColor);
+```
+
+Creates a rounded-box distance-field gradient. It is commonly applied to a path larger than the box to render a shadow:
+
+```c
+NVGpaint shadow = nvgBoxGradient(
+    vg, x, y + 2, width, height,
+    12, 16,
+    nvgRGBA(0, 0, 0, 128),
+    nvgRGBA(0, 0, 0, 0));
+
+nvgBeginPath(vg);
+nvgRect(vg, x - 16, y - 16, width + 32, height + 40);
+nvgRoundedRect(vg, x, y, width, height, 8);
+nvgPathWinding(vg, NVG_HOLE);
+nvgFillPaint(vg, shadow);
+nvgFill(vg);
+```
+
+`cornerRadius` controls the box shape. `feather` controls the transition distance and is internally limited to at least `1.0f`.
+
+## `nvgRadialGradient`
+
+```c
+NVGpaint nvgRadialGradient(
+    NVGcontext* ctx,
+    float centerX,
+    float centerY,
+    float innerRadius,
+    float outerRadius,
+    NVGcolor innerColor,
+    NVGcolor outerColor);
+```
+
+Creates a radial transition centered at `(centerX, centerY)`. The inner color occupies the inner radius and transitions to the outer color across the difference between radii.
+
+Use `outerRadius >= innerRadius` and nonnegative finite radii. The setter does not reject reversed radii; the implementation reduces the feather to at least one, which may not represent the intended gradient.
+
+## `nvgImagePattern`
+
+```c
+NVGpaint nvgImagePattern(
+    NVGcontext* ctx,
+    float originX,
+    float originY,
+    float extentX,
+    float extentY,
+    float angle,
+    int image,
+    float alpha);
+```
+
+Creates a paint backed by an existing NanoVG image handle.
+
+| Parameter | Meaning |
+| --- | --- |
+| `originX`, `originY` | Pattern origin and rotation pivot. |
+| `extentX`, `extentY` | Size of one image instance in logical units. |
+| `angle` | Rotation in radians. |
+| `image` | Valid image handle created by the same context. |
+| `alpha` | Pattern opacity multiplier, normally 0 through 1. |
+
+The function stores the image handle but does not retain a separate ownership reference. Do not delete the image until drawing that uses the paint has been flushed.
+
+Tiling outside one extent depends on the image being created with `NVG_IMAGE_REPEATX` and/or `NVG_IMAGE_REPEATY`.
+
+The alpha argument is stored directly without clamping. It is later multiplied by global alpha.
+
+## Solid color setters
+
+### `nvgFillColor` and `nvgStrokeColor`
+
+```c
+void nvgFillColor(NVGcontext* ctx, NVGcolor color);
+void nvgStrokeColor(NVGcontext* ctx, NVGcolor color);
+```
+
+Replace the current fill or stroke paint with a solid-color paint. Calling either function discards the previous gradient or image pattern for that style.
+
+The values are part of saved state and are read when `nvgFill()` or `nvgStroke()` is called.
+
+## Paint setters
+
+### `nvgFillPaint` and `nvgStrokePaint`
+
+```c
+void nvgFillPaint(NVGcontext* ctx, NVGpaint paint);
+void nvgStrokePaint(NVGcontext* ctx, NVGpaint paint);
+```
+
+Copy the supplied paint into the current state and combine its transform with the current NanoVG transform. Later changes to the caller's local `NVGpaint` variable do not alter the assigned style.
+
+Assigning a paint does not draw and does not validate its image handle. The handle is resolved by the renderer when the path is rendered.
+
+## `nvgStrokeWidth`
+
+```c
+void nvgStrokeWidth(NVGcontext* ctx, float width);
+```
+
+Sets stroke width in current logical units. The default is `1.0f`.
+
+At `nvgStroke()` time, NanoVG multiplies the width by the average scale of the current transform and clamps the resulting device-space width to 0 through 200. Widths below the antialias fringe are rendered by reducing opacity.
+
+Use nonnegative finite input. The setter itself does not validate it.
+
+## `nvgMiterLimit`
+
+```c
+void nvgMiterLimit(NVGcontext* ctx, float limit);
+```
+
+Controls when a `NVG_MITER` join becomes a bevel. The value is a ratio between miter length and stroke width. The default is `10.0f`.
+
+Lower values bevel sharp corners sooner. This setting has no visible effect for round or bevel joins.
+
+## `nvgLineCap`
+
+```c
+void nvgLineCap(NVGcontext* ctx, int cap);
+```
+
+Sets the treatment of open subpath endpoints:
+
+| Value | Behavior |
+| --- | --- |
+| `NVG_BUTT` | Ends at the endpoint; default. |
+| `NVG_ROUND` | Adds a semicircular cap. |
+| `NVG_SQUARE` | Extends by half the stroke width with a square edge. |
+
+Caps do not apply between the last and first segment of a closed path.
+
+## `nvgLineJoin`
+
+```c
+void nvgLineJoin(NVGcontext* ctx, int join);
+```
+
+Sets the connection between adjacent stroke segments:
+
+| Value | Behavior |
+| --- | --- |
+| `NVG_MITER` | Extends edges to their intersection, subject to the miter limit; default. |
+| `NVG_ROUND` | Uses a rounded outer corner. |
+| `NVG_BEVEL` | Cuts the outer corner flat. |
+
+## `nvgLineStyle`
+
+```c
+void nvgLineStyle(NVGcontext* ctx, int style);
+```
+
+Selects this fork's stroke expansion style:
+
+| Value | Purpose |
+| --- | --- |
+| `NVG_LINE_SOLID` | Ordinary continuous stroke; default. |
+| `NVG_LINE_DASHED` | Dashed stroke generated by this fork's tessellator. |
+| `NVG_LINE_DOTTED` | Dotted stroke generated by this fork's tessellator. |
+| `NVG_LINE_GLOW` | Expanded glow-style stroke. |
+
+These styles do not expose a public dash-array or phase API. Their appearance is determined by the current implementation and can vary with stroke width, path geometry, and backend antialiasing.
+
+All stroke setters store the requested value without enum validation. Pass only declared constants.
+
+## Style evaluation summary
+
+| Property | Captured or evaluated |
+| --- | --- |
+| Path coordinates | When each path command is appended |
+| Paint's local geometry | When the paint constructor returns |
+| Current transform applied to paint | When `nvgFillPaint()` or `nvgStrokePaint()` is called |
+| Solid color | When the color setter is called |
+| Stroke width and line settings | When `nvgStroke()` tessellates |
+| Global alpha and compositing | When fill or stroke is queued |
+| Image contents | Through the image handle used by the renderer |
+
+## Common mistakes
+
+- Passing 0-to-255 values to the floating color constructors.
+- Assuming `nvgRGBAf()`, `nvgTransRGBAf()`, or image-pattern alpha clamps values.
+- Expecting color interpolation to be linear-light.
+- Assigning a paint before establishing the transform that should move it.
+- Deleting an image while an image paint still needs it.
+- Expecting repeat flags added after image creation to affect an existing image.
+- Using a reversed radial range and expecting an automatically inverted gradient.
+- Passing join constants to `nvgLineCap()` or cap constants to `nvgLineJoin()`.
+- Expecting configurable dash lengths from `nvgLineStyle()`.
+
+See [Strokes and fills](/guides/strokes-and-fills), [Images](/reference/images), and [Paths](/reference/paths) for complete rendering examples.

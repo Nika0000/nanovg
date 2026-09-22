@@ -1,0 +1,51 @@
+---
+title: Choosing a renderer
+description: Match NanoVG's available renderer backends to a graphics API and platform.
+---
+
+Choose the renderer already used by the host application. NanoVG does not create a device, window, swap chain, or command queue, so adopting a different graphics API solely for NanoVG usually adds unnecessary integration work.
+
+## Backend matrix
+
+| Renderer | Public header | Context creation | Typical platform or API |
+| --- | --- | --- | --- |
+| OpenGL 2 | `nanovg_gl.h` | `nvgCreateGL2(flags)` | Desktop compatibility contexts |
+| OpenGL 3 | `nanovg_gl.h` | `nvgCreateGL3(flags)` | Desktop core-profile OpenGL |
+| OpenGL ES 2 | `nanovg_gl.h` | `nvgCreateGLES2(flags)` | Embedded and mobile GLES 2 |
+| OpenGL ES 3 | `nanovg_gl.h` | `nvgCreateGLES3(flags)` | Embedded, mobile, and WebGL 2 builds |
+| Direct3D 11 | `nanovg_d3d11.h` | `nvgCreateD3D11(device, flags)` | Windows applications using D3D11 |
+| Vulkan | `nanovg_vk.h` | `nvgCreateVk(info, flags, queue)` | Explicit Vulkan renderers |
+| Metal | `nanovg_mtl.h` | `nvgCreateMTL(layer, flags)` | Apple platforms |
+| WebGPU | `nanovg_wgpu.h` | `nvgCreateWgpu(info, flags)` | Dawn, wgpu-native, or Emscripten WebGPU |
+| deko3d | `nanovg_dk.h` | `nvgCreateDk(renderer, flags)` | Nintendo Switch homebrew tooling |
+| PlayStation 4 | `nanovg_ps4.h` | Backend-specific setup | Licensed PlayStation 4 environments |
+
+All backends share `nanovg.h` and the same path, paint, image, and text calls.
+
+## OpenGL and OpenGL ES
+
+These are the simplest starting points when the application already owns a current GL context. Select exactly one implementation macro: `NANOVG_GL2_IMPLEMENTATION`, `NANOVG_GL3_IMPLEMENTATION`, `NANOVG_GLES2_IMPLEMENTATION`, or `NANOVG_GLES3_IMPLEMENTATION`.
+
+The active framebuffer needs stencil storage. NanoVG changes graphics state while flushing; applications that cache GL state should restore or invalidate that cache after `nvgEndFrame()`.
+
+## Direct3D 11
+
+Pass an existing `ID3D11Device` to `nvgCreateD3D11()`. The host binds its render target, depth-stencil view, and viewport before the NanoVG frame. The Windows example shows the complete device and swap-chain setup.
+
+## Vulkan
+
+The Vulkan backend expects the host to manage the instance, physical and logical devices, queue, synchronization, command buffers, and dynamic rendering scope. It requires Vulkan dynamic rendering and synchronization2 features. See `VKNVGCreateInfo` in `nanovg_vk.h` and the Vulkan examples before integrating it.
+
+## Metal
+
+Enable `NANOVG_PLATFORM_METAL` so CMake compiles `src/metal/nanovg_mtl.m`. Context creation accepts the application's Metal layer. Integrating this backend requires Objective-C or Objective-C++ at the platform boundary.
+
+## WebGPU
+
+Include the implementation's standard C `webgpu.h` before `nanovg_wgpu.h`. NanoVG can work with Dawn, wgpu-native, or Emscripten WebGPU. The host begins a compatible color and depth-stencil render pass and calls `nvgWgpuBindRenderPass()` before drawing.
+
+## Console backends
+
+deko3d and PlayStation 4 require their respective external SDKs or toolchains. Their public headers and implementation sources are present, but general desktop build instructions do not provide those dependencies.
+
+Once selected, follow [Your first frame](/getting-started/first-frame) for the shared frame and drawing sequence.

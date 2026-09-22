@@ -1,4 +1,4 @@
-name: Playground
+name: Documentation
 
 on:
   push:
@@ -20,28 +20,40 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: mymindstorm/setup-emsdk@v14
+      - uses: actions/setup-node@v4
         with:
-          version: 3.1.64
-          actions-cache-folder: emsdk-cache
+          node-version: 22
+          cache: npm
+          cache-dependency-path: docs/site/package-lock.json
 
-      - name: Check generated bindings are current
+      - name: Install docs dependencies
+        working-directory: docs/site
+        run: npm ci
+
+      - name: Check docs types
+        working-directory: docs/site
+        run: npm run typecheck
+
+      - name: Check docs links
+        working-directory: docs/site
+        run: npm run check:links
+
+      - name: Build docs
+        working-directory: docs/site
+        env:
+          DOCS_BASE_PATH: /${{ github.event.repository.name }}/docs
+        run: npm run build
+
+      - name: Assemble Pages site
         run: |
-          python3 playground/tools/gen_bindings.py
-          git diff --exit-code -- playground/src/nanovg_web_gen.inc \
-                                  playground/www/nvg_gen.js \
-                                  playground/www/nvg_api.json \
-            || { echo "::error::Generated bindings are stale. Run playground/tools/gen_bindings.py and commit the result."; exit 1; }
-
-      - name: Configure
-        run: emcmake cmake -B build-web -DNANOVG_BUILD_PLAYGROUND=ON -DCMAKE_BUILD_TYPE=Release
-
-      - name: Build
-        run: cmake --build build-web
+          mkdir -p build-pages/docs
+          cp -a docs/site/out/. build-pages/docs/
+          printf '<!doctype html><meta http-equiv="refresh" content="0;url=./docs/"><a href="./docs/">NanoVG documentation</a>\n' > build-pages/index.html
+          touch build-pages/.nojekyll
 
       - uses: actions/upload-pages-artifact@v4
         with:
-          path: build-web/playground/site
+          path: build-pages
 
   deploy:
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'

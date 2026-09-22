@@ -1,0 +1,12 @@
+{
+  "title": "Guides",
+  "pages": [
+    "index",
+    "shapes",
+    "strokes-and-fills",
+    "text-and-fonts",
+    "images",
+    "image-filters",
+    "framebuffers"
+  ]
+}

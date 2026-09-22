@@ -1,0 +1,11 @@
+node_modules/
+.next/
+.source/
+out/
+*.tsbuildinfo
+
+next-env.d.ts
+public/preview/
+public/preview-isolation.js
+playwright-report/
+test-results/

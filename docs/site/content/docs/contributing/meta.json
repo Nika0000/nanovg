@@ -1,0 +1,11 @@
+{
+  "title": "Contributing",
+  "pages": [
+    "index",
+    "build-options",
+    "tests",
+    "api-changes",
+    "renderer-backends",
+    "documentation"
+  ]
+}

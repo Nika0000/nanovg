@@ -1,0 +1,22 @@
+---
+title: Getting started
+description: Add NanoVG to a project, select a renderer, and draw your first frame.
+---
+
+NanoVG provides one drawing API over several graphics backends. A basic integration has three parts:
+
+1. Build and link the core `nanovg` library.
+2. Initialize one renderer backend and create an `NVGcontext`.
+3. Draw between `nvgBeginFrame()` and `nvgEndFrame()` on every frame.
+
+## Recommended path
+
+Start with [Installation](/getting-started/installation), then follow [Your first frame](/getting-started/first-frame). If the application does not already use a supported graphics API, compare the options in [Choosing a renderer](/getting-started/choosing-a-renderer).
+
+To explore working integrations first, [build the examples](/getting-started/examples). The embedded [live examples](/guides/shapes) compile editable C++ directly in your browser.
+
+## What NanoVG manages
+
+NanoVG tessellates paths, batches draw data, manages its fonts and images, and submits the resulting work through the selected backend. The host application still owns the window, graphics device, swap chain, primary render target, event loop, and presentation.
+
+The host must provide a stencil-capable target where required and set up the backend's render pass before NanoVG begins a frame.
