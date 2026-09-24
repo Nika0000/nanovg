@@ -11,6 +11,7 @@ import defaultMdxComponents from 'fumadocs-ui/mdx';
 import { ApiReferenceGrid } from '@/components/api-reference-grid';
 import { GuideGrid } from '@/components/guide-grid';
 import { LiveExample } from '@/components/live-example';
+import { StarterDownloads } from '@/components/starter-downloads';
 import { WelcomeActions } from '@/components/welcome-actions';
 import { getPageMarkdownUrl } from '@/lib/shared';
 import { source } from '@/lib/source';
@@ -47,7 +48,7 @@ export default async function Page({ params }: Props) {
         <ViewOptionsPopover markdownUrl={markdownUrl} githubUrl={githubUrl} />
       </div>
       <DocsBody>
-        <MDX components={{ ...defaultMdxComponents, ApiReferenceGrid, GuideGrid, LiveExample, Step, Steps, WelcomeActions }} />
+        <MDX components={{ ...defaultMdxComponents, ApiReferenceGrid, GuideGrid, LiveExample, StarterDownloads, Step, Steps, WelcomeActions }} />
       </DocsBody>
     </DocsPage>
   );

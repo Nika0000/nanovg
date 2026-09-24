@@ -7,5 +7,6 @@ out/
 next-env.d.ts
 public/preview/
 public/preview-isolation.js
+public/downloads/
 playwright-report/
 test-results/
