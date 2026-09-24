@@ -21,8 +21,8 @@
 
 #define NVG_VERSION_MAJOR 0        // x-release-please-major
 #define NVG_VERSION_MINOR 10        // x-release-please-minor
-#define NVG_VERSION_PATCH 2        // x-release-please-patch
-#define NVG_VERSION_STRING "0.10.2" // x-release-please-version
+#define NVG_VERSION_PATCH 3        // x-release-please-patch
+#define NVG_VERSION_STRING "0.10.3" // x-release-please-version
 
 #ifdef __cplusplus
 extern "C" {

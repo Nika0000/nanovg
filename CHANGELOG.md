@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.3](https://github.com/Nika0000/nanovg/compare/v0.10.2...v0.10.3) (2026-09-24)
+
+
+### Features
+
+* add downloadable backend starter projects ([5d9e16e](https://github.com/Nika0000/nanovg/commit/5d9e16e44021adba8714a9551321af6f3a3d122a))
+
 ## [0.10.2](https://github.com/Nika0000/nanovg/compare/v0.10.1...v0.10.2) (2026-09-22)
 
 
